@@ -9,6 +9,9 @@
     <AssemblyName>System.Net.Http</AssemblyName>
   </PropertyGroup>
   
+  <!-- First commit to push to origin/deletemet -->
+  <!-- Second commit to push to origin/deletemet to replace First -->
+
   <!-- Help VS understand available configurations -->
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'FreeBSD_Debug|AnyCPU' " />
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'FreeBSD_Release|AnyCPU' " />
