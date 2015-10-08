@@ -262,4 +262,83 @@ namespace System.Net.Security
     {
         // TODO (Issue #3362) To be implemented
     }
+
+    internal sealed class SafeFreeGssCredentials : Interop.libgssapi.SafeGssCredHandle
+    {
+        public SafeFreeGssCredentials(string username, string password, string domain) : base(username, password, domain)
+        {
+        }
+    }
+
+    internal sealed class SafeDeleteGssContext : SafeHandle
+    {
+        private readonly Interop.libgssapi.SafeGssNameHandle _targetName;
+        private SafeFreeGssCredentials _credential;
+        private Interop.libgssapi.SafeGssContextHandle _context;
+        private bool _encryptAndSign;
+
+        public Interop.libgssapi.SafeGssNameHandle TargetName
+        {
+            get { return _targetName; }
+        }
+
+        public Interop.libgssapi.SafeGssContextHandle GssContext
+        {
+            get { return _context; }
+        }
+
+        public bool NeedsEncryption
+        {
+            get { return _encryptAndSign; }
+        }
+
+        public SafeDeleteGssContext(string targetName, uint flags) : base (IntPtr.Zero, true)
+        {
+            // In server case, targetName can be null or empty
+            if (!String.IsNullOrEmpty(targetName))
+            {
+                _targetName = new Interop.libgssapi.SafeGssNameHandle(targetName, Interop.libgssapi.GSS_KRB5_NT_PRINCIPAL_NAME);
+            }
+
+            _encryptAndSign = (flags & (uint)Interop.libgssapi.ContextFlags.GSS_C_CONF_FLAG) != 0;
+        }
+
+        public override bool IsInvalid
+        {
+            get
+            {
+                return (null == _context) || _context.IsInvalid;
+            }
+        }
+
+        public void SetHandle(SafeFreeGssCredentials credential, Interop.libgssapi.SafeGssContextHandle context)
+        {
+            Debug.Assert(!context.IsInvalid, "Invalid context passed to SafeDeleteGssContext");
+            _context = context;
+
+            // After context establishment is initiated, callers expect SafeDeleteGssContext
+            // to bump up the ref count.
+            // NOTE: When using default credentials, the credential handle may be invalid
+            if ((null != credential) && !credential.IsInvalid)
+            {
+                bool ignore = false;
+                _credential = credential;
+                _credential.DangerousAddRef(ref ignore);
+            }
+        }
+
+        protected override bool ReleaseHandle()
+        {
+            if ((null != _credential) && !_credential.IsInvalid)
+            {
+                _credential.DangerousRelease();
+            }
+            _context.Dispose();
+            if (_targetName != null)
+            {
+                _targetName.Dispose();
+            }
+            return true;
+        }
+    }
 }
