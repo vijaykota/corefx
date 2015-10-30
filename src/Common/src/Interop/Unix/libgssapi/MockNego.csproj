@@ -1,0 +1,97 @@
+﻿<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), dir.props))\dir.props" />
+  <PropertyGroup>
+    <AssemblyName>MockNego</AssemblyName>
+    <AssemblyVersion>4.0.0.0</AssemblyVersion>
+    <OutputType>Exe</OutputType>
+    <ProjectGuid>{89F37791-6254-4D60-AB96-ACD3CCA0E771}</ProjectGuid>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);FEATURE_CORECLR;DEBUG</DefineConstants>
+  </PropertyGroup>
+  <!-- Help VS understand available configurations -->
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'FreeBSD_Debug|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'FreeBSD_Release|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Linux_Debug|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Linux_Release|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'OSX_Debug|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'OSX_Release|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Windows_Debug|AnyCPU' " />
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Windows_Release|AnyCPU' " />
+
+  <ItemGroup Condition=" '$(TargetsUnix)' == 'true' ">  
+    <Compile Include="Program.cs"/>
+    <Compile Include="MockNegotiateStream.cs"/>
+    <Compile Include="MockUtils.cs"/>
+    <Compile Include="Interop.libgssapi.cs"/>
+    <Compile Include="Interop.libgssapi_types.cs"/>
+    <Compile Include="Interop.GssApi.cs"/>
+    <Compile Include="Interop.GssApiException.cs"/>
+    <Compile Include="Interop.SafeGssHandle.cs"/>
+    <Compile Include="..\libheimntlm\Interop.Crypto.cs"/>
+    <Compile Include="..\libheimntlm\Interop.libheimntlm.cs"/>
+    <Compile Include="..\libheimntlm\Interop.libheimntlm_types.cs"/>
+    <Compile Include="..\libheimntlm\Interop.HeimdalNtlm.cs"/>
+    <Compile Include="..\libheimntlm\Interop.HeimdalNtlmException.cs"/>
+    <Compile Include="..\libheimntlm\Interop.SafeNtlmHandle.cs"/>
+    <Compile Include="..\..\..\..\..\System.Net.Security\src\System\Net\_SecurityBuffer.cs" />
+    <Compile Include="..\..\..\..\..\System.Net.Security\src\System\Net\_SecurityBufferType.cs" />
+    <Compile Include="..\..\..\..\..\System.Net.Security\src\System\Net\NegotiateStreamPal.Unix.cs" />
+    <Compile Include="..\..\..\..\..\System.Net.Security\src\System\Net\SecurityStatus.cs" />
+    <Compile Include="..\..\..\..\..\System.Net.Security\src\System\Net\Unix\SecuritySafeHandles.cs" />
+    <!--Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafeX509Handles.Unix.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\SafeX509Handles.Unix.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafePkcs7Handle.Unix.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\SafePkcs7Handle.Unix.cs</Link>
+    </Compile-->
+
+    <!-- Logging -->
+    <Compile Include="$(CommonPath)\System\Net\Shims\TraceSource.cs">
+      <Link>Common\System\Net\Shims\TraceSource.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\Logging\Logging.cs">
+      <Link>Common\System\Net\Logging\Logging.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\Logging\GlobalLog.cs">
+      <Link>Common\System\Net\Logging\GlobalLog.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\Logging\EventSourceLogging.cs">
+      <Link>Common\System\Net\Logging\EventSourceLogging.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\InternalException.cs">
+      <Link>Common\System\Net\InternalException.cs</Link>
+    </Compile>
+
+    <!-- Debug only --> 
+    <Compile Include="$(CommonPath)\System\Net\DebugSafeHandle.cs">
+      <Link>Common\System\Net\DebugSafeHandle.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\DebugCriticalHandleMinusOneIsInvalid.cs">
+      <Link>Common\System\Net\DebugCriticalHandleMinusOneIsInvalid.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\Net\DebugCriticalHandleZeroOrMinusOneIsInvalid.cs">
+      <Link>Common\System\Net\DebugCriticalHandleZeroOrMinusOneIsInvalid.cs</Link>
+    </Compile>
+
+    <!-- Common -->
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\CriticalHandleMinusOneIsInvalid.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\CriticalHandleMinusOneIsInvalid.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\CriticalHandleZeroOrMinusOneIsInvalid.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\CriticalHandleZeroOrMinusOneIsInvalid.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\System\NotImplemented.cs" >
+      <Link>Common\System\NotImplemented.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafeHandleZeroOrMinusOneIsInvalid.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\SafeHandleZeroOrMinusOneIsInvalid.cs</Link>
+    </Compile>
+
+   
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="project.json" />
+  </ItemGroup>
+  <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), dir.targets))\dir.targets" />  
+</Project>

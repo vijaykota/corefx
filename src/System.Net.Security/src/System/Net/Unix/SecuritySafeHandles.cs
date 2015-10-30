@@ -12,6 +12,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace System.Net.Security
 {
+#if false
 #if DEBUG
     internal sealed class SafeFreeCertContext : DebugSafeHandle
     {
@@ -262,6 +263,7 @@ namespace System.Net.Security
     {
         // TODO (Issue #3362) To be implemented
     }
+#endif
 
     internal sealed class SafeFreeGssCredentials : Interop.libgssapi.SafeGssCredHandle
     {
@@ -292,23 +294,21 @@ namespace System.Net.Security
             get { return _encryptAndSign; }
         }
 
-        public SafeDeleteGssContext(string targetName, uint flags) : base (IntPtr.Zero, true)
+        public SafeDeleteGssContext(string targetName, uint flags) : base(IntPtr.Zero, true)
         {
             // In server case, targetName can be null or empty
             if (!String.IsNullOrEmpty(targetName))
             {
-                _targetName = new Interop.libgssapi.SafeGssNameHandle(targetName, Interop.libgssapi.GSS_KRB5_NT_PRINCIPAL_NAME);
+                _targetName = new Interop.libgssapi.SafeGssNameHandle(targetName,
+                    Interop.libgssapi.GSS_KRB5_NT_PRINCIPAL_NAME);
             }
 
-            _encryptAndSign = (flags & (uint)Interop.libgssapi.ContextFlags.GSS_C_CONF_FLAG) != 0;
+            _encryptAndSign = (flags & (uint) Interop.libgssapi.ContextFlags.GSS_C_CONF_FLAG) != 0;
         }
 
         public override bool IsInvalid
         {
-            get
-            {
-                return (null == _context) || _context.IsInvalid;
-            }
+            get { return (null == _context) || _context.IsInvalid; }
         }
 
         public void SetHandle(SafeFreeGssCredentials credential, Interop.libgssapi.SafeGssContextHandle context)
@@ -337,6 +337,126 @@ namespace System.Net.Security
             if (_targetName != null)
             {
                 _targetName.Dispose();
+            }
+            return true;
+        }
+    }
+
+    internal sealed class SafeFreeNtlmCredentials : SafeHandle
+    {
+        private readonly string _username;
+        private readonly string _password;
+        private readonly string _domain;
+
+        public string UserName
+        {
+            get { return _username; }
+        }
+
+        public string Password
+        {
+            get { return _password; }
+        }
+
+        public string Domain
+        {
+            get { return _domain; }
+        }
+
+        public SafeFreeNtlmCredentials(string username, string password, string domain)
+            : base(IntPtr.Zero, false)
+        {
+            _username = username;
+            _password = password;
+            _domain = domain;
+        }
+
+        public override bool IsInvalid
+        {
+            get { return false; }
+        }
+
+        protected override bool ReleaseHandle()
+        {
+            return true;
+        }
+    }
+
+    internal sealed class SafeDeleteNtlmContext : SafeHandle
+    {
+        private readonly SafeFreeNtlmCredentials _credential;
+        private readonly uint _flags;
+        private Interop.libheimntlm.SafeNtlmKeyHandle _serverSignKey;
+        private Interop.libheimntlm.SafeNtlmKeyHandle _serverSealKey;
+        private Interop.libheimntlm.SafeNtlmKeyHandle _clientSignKey;
+        private Interop.libheimntlm.SafeNtlmKeyHandle _clientSealKey;
+
+        public uint Flags
+        {
+            get { return _flags;  }
+        }
+
+        public SafeDeleteNtlmContext(SafeFreeNtlmCredentials credential, uint flags)
+            : base(IntPtr.Zero, true)
+        {
+            bool ignore = false;
+            credential.DangerousAddRef(ref ignore);
+            _credential = credential;
+            _flags = flags;
+        }
+
+        public override bool IsInvalid
+        {
+            get { return (null == _credential) || _credential.IsInvalid; }
+        }
+
+        public void SetKeys(Interop.libheimntlm.SafeNtlmBufferHandle sessionKey)
+        {
+            Interop.HeimdalNtlm.CreateKeys(sessionKey, out _serverSignKey, out _serverSealKey, out _clientSignKey, out _clientSealKey);
+        }
+
+        public byte[] MakeSignature(bool isSend, byte[] buffer, int offset, int count)
+        {
+            if (isSend)
+            {
+                return _clientSignKey.Sign(_clientSealKey, buffer, offset, count);
+            }
+            else
+            {
+                return _serverSignKey.Sign(_serverSealKey, buffer, offset, count);
+            }
+        }
+
+        public byte[] EncryptOrDecrypt(bool isEncrypt, byte[] buffer, int offset, int count)
+        {
+            if (isEncrypt)
+            {
+                return _clientSealKey.SealOrUnseal(true, buffer, offset, count);
+            }
+            else
+            {
+                return _serverSealKey.SealOrUnseal(false, buffer, offset, count);
+            }
+        }
+
+        protected override bool ReleaseHandle()
+        {
+            _credential.DangerousRelease();
+            if ((null != _clientSignKey) && !_clientSignKey.IsInvalid)
+            {
+                _clientSignKey.Dispose();
+            }
+            if ((null != _clientSealKey) && !_clientSealKey.IsInvalid)
+            {
+                _clientSealKey.Dispose();
+            }
+            if ((null != _serverSignKey) && !_serverSignKey.IsInvalid)
+            {
+                _serverSignKey.Dispose();
+            }
+            if ((null != _serverSealKey) && !_serverSealKey.IsInvalid)
+            {
+                _serverSealKey.Dispose();
             }
             return true;
         }

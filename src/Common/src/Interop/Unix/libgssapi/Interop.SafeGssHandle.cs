@@ -18,6 +18,7 @@ internal static partial class Interop
         /// </summary>
         internal sealed class SafeGssBufferHandle : SafeHandle
         {
+            private readonly bool _isOutputBuffer;
             private int _length;
             private IntPtr _value;
 
@@ -51,9 +52,10 @@ internal static partial class Interop
 
             public SafeGssBufferHandle() : this(0, IntPtr.Zero)
             {
+                _isOutputBuffer = true;
             }
 
-            public SafeGssBufferHandle(int length, IntPtr value) : base(IntPtr.Zero, length==0)
+            public SafeGssBufferHandle(int length, IntPtr value) : base(IntPtr.Zero, true)
             {
                 _length = length;
                 _value = value;
@@ -76,15 +78,18 @@ internal static partial class Interop
             // it is owned by libgssapi
             protected override bool ReleaseHandle()
             {
-                if (_value == IntPtr.Zero)
+                if (_isOutputBuffer)
                 {
-                    _value = Marshal.ReadIntPtr(handle, (int)Marshal.OffsetOf<gss_buffer_desc>("value"));
-                }
-                if (_value != IntPtr.Zero)
-                {
-                    OM_uint32 status, minorStatus;
-                    status = gss_release_buffer(out minorStatus, handle);
-                    GssApiException.AssertOrThrowIfError("gss_release_buffer failed", status, minorStatus);
+                    if (_value == IntPtr.Zero)
+                    {
+                        _value = Marshal.ReadIntPtr(handle, (int) Marshal.OffsetOf<gss_buffer_desc>("value"));
+                    }
+                    if (_value != IntPtr.Zero)
+                    {
+                        OM_uint32 status, minorStatus;
+                        status = gss_release_buffer(out minorStatus, handle);
+                        GssApiException.AssertOrThrowIfError("gss_release_buffer failed", status, minorStatus);
+                    }
                 }
                 Marshal.FreeHGlobal(handle);
                 SetHandle(IntPtr.Zero);

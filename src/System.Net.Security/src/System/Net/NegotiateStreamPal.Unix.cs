@@ -19,7 +19,7 @@ namespace System.Net
             string username,
             string password,
             string domain,
-            out SafeFreeGssCredentials outCredential)
+            out SafeHandle outCredential)
         {
             if (isInBoundCred || string.IsNullOrEmpty(username))
             {
@@ -28,33 +28,38 @@ namespace System.Net
                 // unexpired Kerberos TGT to get service-specific ticket.
                 outCredential = new SafeFreeGssCredentials(string.Empty, string.Empty, string.Empty);
             }
+            else if (string.Equals(moduleName, "NTLM"))
+            {
+                outCredential = new SafeFreeNtlmCredentials(username, password, domain);
+            }
             else
             {
                 outCredential = new SafeFreeGssCredentials(username, password, domain);
+                // TODO (Issue #3717): Fall back to NTLM if Kerberos ticket cannot be obtained
             }
             return SecurityStatus.OK;
         }
 
-        public static SecurityStatus AcquireDefaultCredential(string moduleName, bool isInBoundCred, out SafeFreeGssCredentials outCredential)
+        public static SecurityStatus AcquireDefaultCredential(string moduleName, bool isInBoundCred, out SafeHandle outCredential)
         {
             return AcquireCredentialsHandle(moduleName, isInBoundCred, string.Empty, string.Empty, string.Empty, out outCredential);
         }
 
         public static SecurityStatus AcceptSecurityContext(
-            SafeFreeGssCredentials credential,
-            ref SafeDeleteGssContext context,
+            SafeHandle credential,
+            ref SafeHandle context,
             SecurityBuffer inputBuffer,
             uint inFlags,
             uint endianNess,
             SecurityBuffer outputBuffer,
             ref uint outFlags)
         {
-            return EstablishSecurityContext(credential, ref context, string.Empty, inFlags, inputBuffer, outputBuffer, ref outFlags);
+            return EstablishSecurityContext((SafeFreeGssCredentials)credential, ref context, string.Empty, inFlags, inputBuffer, outputBuffer, ref outFlags);
         }
 
         public static SecurityStatus InitializeSecurityContext(
-            SafeFreeGssCredentials credential,
-            ref SafeDeleteGssContext context,
+            SafeHandle credential,
+            ref SafeHandle context,
             string targetName,
             uint inFlags,
             uint endianNess,
@@ -67,20 +72,77 @@ namespace System.Net
             {
                 throw new NotImplementedException("No support for channel binding on non-Windows");
             }
-            return EstablishSecurityContext(credential, ref context, targetName, inFlags, inputBuffers[0], outputBuffer, ref outFlags);
+
+            if (IsNtlmClient(targetName, credential))
+            {
+                return InitializeNtlmSecurityContext((SafeFreeNtlmCredentials)credential, ref context, inFlags, inputBuffers[0], outputBuffer);
+            }
+            return EstablishSecurityContext((SafeFreeGssCredentials)credential, ref context, targetName, inFlags, inputBuffers[0], outputBuffer, ref outFlags);
         }
 
-        public static int EncryptOrSignMessage(SafeDeleteGssContext securityContext, byte[] buffer, int offset, int count, ref byte[] output, uint sequenceNumber)
+        public static int Encrypt(SafeHandle securityContext, byte[] buffer, int offset, int count, ref byte[] output, uint sequenceNumber)
         {
-            // Sequence number is not used by libgssapi
-            return Interop.GssApi.Encrypt(securityContext.GssContext, securityContext.NeedsEncryption, buffer, offset, count, out output);
+            if (securityContext is SafeDeleteGssContext)
+            {
+                // Sequence number is not used by libgssapi
+                SafeDeleteGssContext gssContext = securityContext as SafeDeleteGssContext;
+                return Interop.GssApi.Encrypt(gssContext.GssContext, gssContext.NeedsEncryption, buffer, offset, count, out output);
+            }
+
+            // TODO (Issue# 3717): Figure out why sign verification on peer fails
+            SafeDeleteNtlmContext context = securityContext as SafeDeleteNtlmContext;
+            byte[] cipher = context.EncryptOrDecrypt(true, buffer, offset, count);
+            byte[] signature = context.MakeSignature(true, buffer, offset, count);
+            output = new byte[cipher.Length + signature.Length];
+            Array.Copy(signature, 0, output, 0, signature.Length);
+            Array.Copy(cipher, 0, output, signature.Length, cipher.Length);
+            return output.Length;
         }
 
-        public static int DecryptOrVerifyMessage(SafeDeleteGssContext securityContext, byte[] buffer, int offset, int count, out int newOffset, uint sequenceNumber)
+        public static int Decrypt(SafeHandle securityContext, byte[] buffer, int offset, int count, out int newOffset, uint sequenceNumber)
         {
-            // Sequence number is not used by libgssapi
-            count = Interop.GssApi.Decrypt(securityContext.GssContext, buffer, offset, count);
-            newOffset = 0;
+            if (securityContext is SafeDeleteGssContext)
+            {
+                // Sequence number is not used by libgssapi
+                newOffset = offset;
+                return Interop.GssApi.Decrypt(((SafeDeleteGssContext)securityContext).GssContext, buffer, offset, count);
+            }
+            SafeDeleteNtlmContext context = securityContext as SafeDeleteNtlmContext;
+            byte[] message = context.EncryptOrDecrypt(false, buffer, (offset + 16), (count - 16));
+            Array.Copy(message, 0, buffer, (offset + 16), message.Length);
+            return VerifySignature(securityContext, buffer, offset, count, out newOffset, sequenceNumber);
+        }
+
+        public static int MakeSignature(SafeHandle securityContext, byte[] buffer, int offset, int count, ref byte[] output, uint sequenceNumber)
+        {
+            if (securityContext is SafeDeleteGssContext)
+            {
+                // Sequence number is not used by libgssapi
+                SafeDeleteGssContext context = ((SafeDeleteGssContext)securityContext);
+                return Interop.GssApi.Encrypt(context.GssContext, context.NeedsEncryption, buffer, offset, count, out output);
+            }
+            byte[] signature = ((SafeDeleteNtlmContext) securityContext).MakeSignature(true, buffer, offset, count);
+            output = new byte[signature.Length + count];
+            Array.Copy(signature, 0, output, 0, signature.Length);
+            Array.Copy(buffer, offset, output, signature.Length, count);
+            return output.Length;
+        }
+
+        public static int VerifySignature(SafeHandle securityContext, byte[] buffer, int offset, int count, out int newOffset, uint sequenceNumber)
+        {
+            if (securityContext is SafeDeleteGssContext)
+            {
+                // Sequence number is not used by libgssapi
+                newOffset = offset;
+                return Interop.GssApi.Decrypt(((SafeDeleteGssContext)securityContext).GssContext, buffer, offset, count);
+            }
+            newOffset = offset + 16;
+            count -= 16;
+            byte[] signature = ((SafeDeleteNtlmContext) securityContext).MakeSignature(false, buffer, newOffset, count);
+            for (int i = 0; i < signature.Length; i++)
+            {
+                if (buffer[offset + i] != signature[i]) throw new Exception("Invalid signature");
+            }
             return count;
         }
 
@@ -105,9 +167,45 @@ namespace System.Net
             }
         }
 
+        private static bool IsNtlmClient(string targetName, SafeHandle credential)
+        {
+            return string.IsNullOrEmpty(targetName) || (credential is SafeFreeNtlmCredentials);
+        }
+
+        private static SecurityStatus InitializeNtlmSecurityContext(
+            SafeFreeNtlmCredentials credential,
+            ref SafeHandle context,
+            uint inFlags,
+            SecurityBuffer inputBuffer,
+            SecurityBuffer outputBuffer)
+        {
+            SecurityStatus retVal;
+
+            if (null == context)
+            {
+                context = new SafeDeleteNtlmContext(credential, inFlags);
+                outputBuffer.token = Interop.HeimdalNtlm.CreateNegotiateMessage(inFlags);
+                retVal = SecurityStatus.ContinueNeeded;
+            }
+            else
+            {
+                uint flags = ((SafeDeleteNtlmContext)context).Flags;
+                Interop.libheimntlm.SafeNtlmBufferHandle sessionKey;
+                outputBuffer.token = Interop.HeimdalNtlm.CreateAuthenticateMessage(flags, credential.UserName,
+                    credential.Password, credential.Domain, inputBuffer.token, inputBuffer.offset, inputBuffer.size, out sessionKey);
+                using (sessionKey)
+                {
+                    ((SafeDeleteNtlmContext)context).SetKeys(sessionKey);
+                }
+                retVal = SecurityStatus.OK;
+            }
+            outputBuffer.size = outputBuffer.token.Length;
+            return retVal;
+        }
+
         private static SecurityStatus EstablishSecurityContext(
             SafeFreeGssCredentials credential,
-            ref SafeDeleteGssContext context,
+            ref SafeHandle context,
             string targetName,
             uint inFlags,
             SecurityBuffer inputBuffer,
@@ -119,13 +217,14 @@ namespace System.Net
                 context = new SafeDeleteGssContext(targetName, inFlags);
             }
 
+            SafeDeleteGssContext gssContext = (SafeDeleteGssContext) context;
             try
             {
-                Interop.libgssapi.SafeGssContextHandle gssContext = context.GssContext;
+                Interop.libgssapi.SafeGssContextHandle contextHandle = gssContext.GssContext;
                 bool done = Interop.GssApi.EstablishSecurityContext(
-                                  ref gssContext,
+                                  ref contextHandle,
                                   credential,
-                                  context.TargetName,
+                                  gssContext.TargetName,
                                   inFlags,
                                   inputBuffer.token,
                                   out outputBuffer.token,
@@ -136,9 +235,9 @@ namespace System.Net
                 outputBuffer.offset = 0;
 
                 // Save the inner context handle for further calls to libgssapi
-                if (context.IsInvalid)
+                if (gssContext.IsInvalid)
                 {
-                    context.SetHandle(credential, gssContext);
+                    gssContext.SetHandle(credential, contextHandle);
                 }
                 return done ? SecurityStatus.OK : SecurityStatus.ContinueNeeded;
             }
