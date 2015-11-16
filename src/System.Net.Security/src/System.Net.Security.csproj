@@ -40,6 +40,14 @@
     <Compile Include="System\Security\Authentication\ExtendedProtection\PolicyEnforcement.cs" />
     <Compile Include="System\Security\Authentication\ExtendedProtection\ProtectionScenario.cs" />
     <Compile Include="System\Security\Authentication\ExtendedProtection\ServiceNameCollection.cs" />
+    <Compile Include="System\Net\_NTAuthentication.cs" />
+    <Compile Include="System\Net\_StreamFramer.cs" />
+    <Compile Include="System\Net\_SSPISessionCache.cs" />
+    <Compile Include="System\Net\ContextFlagsPal.cs" />
+    <Compile Include="System\Net\SecureProtocols\_NegoState.cs" />
+    <Compile Include="System\Net\SecureProtocols\_NegoStream.cs" />
+    <Compile Include="System\Net\SecureProtocols\NegotiateEnumTypes.cs" />
+    <Compile Include="System\Net\SecureProtocols\NegotiateStream.cs" />
 
     <!-- TODO: Shims -->
     <Compile Include="Shims\X509CertificateExtensions.cs" />
@@ -123,14 +131,6 @@
   <ItemGroup Condition=" '$(TargetsWindows)' == 'true' ">  
     <Compile Include="System\Net\SslStreamPal.Windows.cs" />
     <Compile Include="System\Net\SecurityContextTokenHandle.cs" />
-    <Compile Include="System\Net\_NTAuthentication.cs" />
-    <Compile Include="System\Net\_StreamFramer.cs" />
-    <Compile Include="System\Net\_SSPISessionCache.cs" />
-    <Compile Include="System\Net\ContextFlagsPal.cs" />
-    <Compile Include="System\Net\SecureProtocols\_NegoState.cs" />
-    <Compile Include="System\Net\SecureProtocols\_NegoStream.cs" />
-    <Compile Include="System\Net\SecureProtocols\NegotiateEnumTypes.cs" />
-    <Compile Include="System\Net\SecureProtocols\NegotiateStream.cs" />
     <Compile Include="System\Net\CertificateValidationPal.Windows.cs" />
     <Compile Include="System\Net\NegotiateStreamPal.Windows.cs" />
     
@@ -206,6 +206,7 @@
   <ItemGroup Condition=" '$(TargetsUnix)' == 'true' ">
     <Compile Include="System\Net\SslStreamPal.Unix.cs" />
     <Compile Include="System\Net\CertificateValidationPal.Unix.cs" />
+    <Compile Include="System\Net\NegotiateStreamPal.Unix.cs" />
 
     <!-- Interop -->
     <Compile Include="$(CommonPath)\Interop\Unix\Interop.Libraries.cs">
@@ -222,6 +223,18 @@
     </Compile>
     <Compile Include="$(CommonPath)\Interop\Unix\libssl\Interop.OpenSsl.cs">
       <Link>Common\Interop\Unix\libssl\Interop.OpenSsl.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\libgssapi\Interop.PlaceHolder.cs">
+      <Link>Common\Interop\Unix\libgssapi\Interop.PlaceHolder.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\libgssapi\NegotiationInfoClass.cs">
+      <Link>Common\Interop\Unix\libgssapi\NegotiationInfoClass.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\libgssapi\SecuritySafeHandles.cs">
+      <Link>Common\Interop\Unix\libgssapi\SecuritySafeHandles.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\libheimntlm\SecuritySafeHandles.cs">
+      <Link>Common\Interop\Unix\libheimntlm\SecuritySafeHandles.cs</Link>
     </Compile>
     <Compile Include="$(CommonPath)\Interop\Unix\System.Security.Cryptography.Native\Interop.ASN1.cs">
       <Link>Common\Interop\Unix\System.Security.Cryptography.Native\Interop.ASN1.cs</Link>
@@ -280,7 +293,6 @@
     <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\Asn1SafeHandles.Unix.cs">
       <Link>Common\Microsoft\Win32\SafeHandles\Asn1SafeHandles.Unix.cs</Link>
     </Compile>
-    <Compile Include="Shims\NegotiateStream.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="project.json" />

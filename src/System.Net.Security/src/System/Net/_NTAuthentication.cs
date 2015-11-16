@@ -841,8 +841,17 @@ namespace System.Net
 
         internal int Encrypt(byte[] buffer, int offset, int count, ref byte[] output, uint sequenceNumber)
         {
-            return NegotiateStreamPal.Encrypt(m_SecurityContext, Sizes, IsConfidentialityFlag, IsNTLM, buffer, offset, count,
+            int resultSize = NegotiateStreamPal.Encrypt(m_SecurityContext, Sizes, IsConfidentialityFlag, IsNTLM, buffer, offset, count,
                 ref output, sequenceNumber);
+
+            unchecked
+            {
+                output[0] = (byte)((resultSize) & 0xFF);
+                output[1] = (byte)(((resultSize) >> 8) & 0xFF);
+                output[2] = (byte)(((resultSize) >> 16) & 0xFF);
+                output[3] = (byte)(((resultSize) >> 24) & 0xFF);
+            }
+            return resultSize + 4;
         }
 
         internal int Decrypt(byte[] payload, int offset, int count, out int newOffset, uint expectedSeqNumber)

@@ -265,14 +265,7 @@ namespace System.Net
 
             resultSize += securityBuffer[2].size;
 
-            unchecked
-            {
-                output[0] = (byte)((resultSize) & 0xFF);
-                output[1] = (byte)(((resultSize) >> 8) & 0xFF);
-                output[2] = (byte)(((resultSize) >> 16) & 0xFF);
-                output[3] = (byte)(((resultSize) >> 24) & 0xFF);
-            }
-            return resultSize + 4;
+            return resultSize;
         }
 
         public static int Decrypt(SafeDeleteContext securityContext, bool isConfidential, bool isNTLM, byte[] payload, int offset, int count, out int newOffset, uint expectedSeqNumber)
