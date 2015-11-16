@@ -366,6 +366,18 @@ internal static partial class Interop
             internal string Password;
             internal int PasswordLength;
             internal int Flags;
+
+            internal AuthIdentity(string userName, string password, string domain)
+            {
+                UserName = userName;
+                UserNameLength = userName == null ? 0 : userName.Length;
+                Password = password;
+                PasswordLength = password == null ? 0 : password.Length;
+                Domain = domain;
+                DomainLength = domain == null ? 0 : domain.Length;
+                // Flags are 2 for Unicode and 1 for ANSI. We use 2 on NT and 1 on Win9x.
+                Flags = 2;
+            }
         }
 
         [DllImport(Interop.Libraries.Secur32, ExactSpelling = true, SetLastError = true)]
@@ -507,6 +519,14 @@ internal static partial class Interop
                   [In] void* inContextPtr,
                   [In, Out] SecurityBufferDescriptor inputBuffers
                   );
+
+        [DllImport(Interop.Libraries.Secur32, ExactSpelling = true, SetLastError = true, CharSet = CharSet.Unicode)]
+        internal static extern SecurityStatus SspiEncodeStringsAsAuthIdentity(
+            [In] string userName,
+            [In] string domainName,
+            [In] string password,
+            [Out] out SafeSspiAuthDataHandle authData
+            );
 
         [DllImport(Interop.Libraries.Secur32, ExactSpelling = true, SetLastError = true)]
         internal unsafe static extern SecurityStatus SspiFreeAuthIdentity(

@@ -51,8 +51,6 @@ namespace System.Net
         private readonly AsyncCallback m_BeginWriteCallback;
 
 
-        private NetworkStream m_NetworkStream;  //optimizing writes
-
         public StreamFramer(Stream Transport)
         {
             if (Transport == null || Transport == Stream.Null)
@@ -61,10 +59,6 @@ namespace System.Net
             }
             m_Transport = Transport;
             m_TransportAPM = new StreamAsyncHelper(m_Transport);
-            if (m_Transport.GetType() == typeof(NetworkStream))
-            {
-                m_NetworkStream = Transport as NetworkStream;
-            }
             m_ReadHeaderBuffer = new byte[m_CurReadHeader.Size];
             m_WriteHeaderBuffer = new byte[m_WriteHeader.Size];
 
@@ -351,14 +345,6 @@ namespace System.Net
             m_WriteHeader.PayloadSize = message.Length;
             m_WriteHeader.CopyTo(m_WriteHeaderBuffer, 0);
 
-            if (m_NetworkStream != null && message.Length != 0)
-            {
-                BufferOffsetSize[] buffers = new BufferOffsetSize[2];
-                buffers[0] = new BufferOffsetSize(m_WriteHeaderBuffer, 0, m_WriteHeaderBuffer.Length, false);
-                buffers[1] = new BufferOffsetSize(message, 0, message.Length, false);
-                m_NetworkStream.MultipleWrite(buffers);
-            }
-            else
             {
                 Transport.Write(m_WriteHeaderBuffer, 0, m_WriteHeaderBuffer.Length);
                 if (message.Length == 0)
@@ -382,14 +368,6 @@ namespace System.Net
 
             m_WriteHeader.PayloadSize = message.Length;
             m_WriteHeader.CopyTo(m_WriteHeaderBuffer, 0);
-
-            if (m_NetworkStream != null && message.Length != 0)
-            {
-                BufferOffsetSize[] buffers = new BufferOffsetSize[2];
-                buffers[0] = new BufferOffsetSize(m_WriteHeaderBuffer, 0, m_WriteHeaderBuffer.Length, false);
-                buffers[1] = new BufferOffsetSize(message, 0, message.Length, false);
-                return m_NetworkStream.BeginMultipleWrite(buffers, asyncCallback, stateObject);
-            }
 
             if (message.Length == 0)
             {

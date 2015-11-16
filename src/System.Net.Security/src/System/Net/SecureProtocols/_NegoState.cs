@@ -39,7 +39,7 @@ namespace System.Net.Security
     //
     internal class NegoState
     {
-        private const int ERROR_TRUST_FAILURE = 1790;   //used to serialize protectionLevel or impersonationLevel mismatch error to the remote side
+        internal const int ERROR_TRUST_FAILURE = 1790;   //used to serialize protectionLevel or impersonationLevel mismatch error to the remote side
 
         private static readonly byte[] _EmptyMessage = new byte[0]; // used in reference comparison, requires unique object identity
         private static readonly AsyncCallback _ReadCallback = new AsyncCallback(ReadCallback);
@@ -102,7 +102,7 @@ namespace System.Net.Security
         {
             if (policy != null)
             {
-                if (!AuthenticationManager.OSSupportsExtendedProtection)
+                if (!NegotiateStreamPal.OSSupportsExtendedProtection)
                 {
                     if (policy.PolicyEnforcement == PolicyEnforcement.Always)
                     {
@@ -156,12 +156,7 @@ namespace System.Net.Security
                 throw new ArgumentNullException("servicePrincipalName");
             }
 
-            if (impersonationLevel != TokenImpersonationLevel.Identification &&
-                impersonationLevel != TokenImpersonationLevel.Impersonation &&
-                impersonationLevel != TokenImpersonationLevel.Delegation)
-            {
-                throw new ArgumentOutOfRangeException("impersonationLevel", impersonationLevel.ToString(), SR.net_auth_supported_impl_levels);
-            }
+            NegotiateStreamPal.ValidateImpersonationLevel(impersonationLevel);
 
             if (_Context != null && IsServer != isServer)
             {
@@ -216,19 +211,21 @@ namespace System.Net.Security
 
             _CanRetryAuthentication = false;
 
+#if false
             //
             // Security: We used to rely on NetworkCredential class to demand permission
             //           Switched over to explicit ControlPrincipalPermission demand (except for DefaultCredential case)
             //           The mitigated attack is brute-force pasword guessing through SSPI.
-            if (!(credential is SystemNetworkCredential))
+            if (!(credential == CredentialCache.DefaultNetworkCredentials))
                 ExceptionHelper.ControlPrincipalPermission.Demand();
+#endif
 
             try
             {
                 //TODO: Consider manually controlling Execution Context for NegotiateStream for better perf.
                 _Context = new NTAuthentication(isServer, package, credential, servicePrincipalName, flags, channelBinding);
             }
-            catch (Win32Exception e)
+            catch (Exception e)
             {
                 throw new AuthenticationException(SR.net_auth_SSPI, e);
             }
@@ -360,30 +357,7 @@ namespace System.Net.Security
 
             protocol = _Context.ProtocolName;
 
-            if (_Context.IsServer)
-            {
-                SafeCloseHandle token = null;
-                try
-                {
-                    token = _Context.GetContextToken();
-                    string authtype = _Context.ProtocolName;
-                    result = new WindowsIdentity(token.DangerousGetHandle(), authtype, WindowsAccountType.Normal, true);
-                    return result;
-                }
-                catch (SecurityException)
-                {
-                    //ignore and construct generic Identity if failed due to security problem
-                }
-                finally
-                {
-                    if (token != null)
-                    {
-                        token.Close();
-                    }
-                }
-            }
-            // on the client we don't have access to the remote side identity.
-            result = new GenericIdentity(name, protocol);
+            result = NegotiateStreamPal.GetPeerIdentity(_Context, name, protocol);
             return result;
         }
 
@@ -501,7 +475,7 @@ namespace System.Net.Security
                 return true;
             }
 
-            if (!AuthenticationManager.OSSupportsExtendedProtection)
+            if (!NegotiateStreamPal.OSSupportsExtendedProtection)
             {
                 GlobalLog.Assert(_ExtendedProtectionPolicy.PolicyEnforcement != PolicyEnforcement.Always,
                     "User managed to set PolicyEnforcement.Always when the OS does not support extended protection!");
@@ -530,7 +504,7 @@ namespace System.Net.Security
         //
         private void StartSendBlob(byte[] message, LazyAsyncResult lazyResult)
         {
-            Win32Exception win32exception = null;
+            Exception win32exception = null;
             if (message != _EmptyMessage)
             {
                 message = GetOutgoingBlob(message, ref win32exception);
@@ -685,25 +659,16 @@ namespace System.Net.Security
             //Process Header information
             if (_Framer.ReadHeader.MessageId == FrameHeader.HandshakeErrId)
             {
-                Win32Exception e = null;
                 if (message.Length >= 8)    // sizeof(long)
                 {
                     // Try to recover remote win32 Exception
                     long error = 0;
                     for (int i = 0; i < 8; ++i)
                         error = (error << 8) + message[i];
-                    e = new Win32Exception((int)error);
-                }
-                if (e != null)
-                {
-                    if (e.NativeErrorCode == (int)SecurityStatus.LogonDenied)
-                        throw new InvalidCredentialException(SR.net_auth_bad_client_creds, e);
-
-                    if (e.NativeErrorCode == ERROR_TRUST_FAILURE)
-                        throw new AuthenticationException(SR.net_auth_context_expectation_remote, e);
+                    NegotiateStreamPal.ThrowCredentialException(error);
                 }
 
-                throw new AuthenticationException(SR.net_auth_alert, e);
+                throw new AuthenticationException(SR.net_auth_alert, null);
             }
 
             if (_Framer.ReadHeader.MessageId == FrameHeader.HandshakeDoneId)
@@ -746,9 +711,7 @@ namespace System.Net.Security
         {
             _Framer.WriteHeader.MessageId = FrameHeader.HandshakeErrId;
 
-            Win32Exception win32exception = exception as Win32Exception;
-
-            if (win32exception != null && win32exception.NativeErrorCode == (int)SecurityStatus.LogonDenied)
+            if (NegotiateStreamPal.IsLogonDeniedException(exception))
                 if (IsServer)
                     exception = new InvalidCredentialException(SR.net_auth_bad_client_creds, exception);
                 else
@@ -846,20 +809,21 @@ namespace System.Net.Security
         //
         //
         //
-        private unsafe byte[] GetOutgoingBlob(byte[] incomingBlob, ref Win32Exception e)
+        private unsafe byte[] GetOutgoingBlob(byte[] incomingBlob, ref Exception e)
         {
-            SecurityStatus statusCode;
+            SecurityStatusPal statusCode;
             byte[] message = _Context.GetOutgoingBlob(incomingBlob, false, out statusCode);
 
-            if (((int)statusCode & unchecked((int)0x80000000)) != 0)
+            if ((int)statusCode >= (int)SecurityStatusPal.OutOfMemory)
             {
-                e = new System.ComponentModel.Win32Exception((int)statusCode);
+                e = NegotiateStreamPal.CreateExceptionFromError(statusCode);
+                uint error = (uint)e.HResult;
 
                 message = new byte[8];  //sizeof(long)
                 for (int i = message.Length - 1; i >= 0; --i)
                 {
-                    message[i] = (byte)((uint)statusCode & 0xFF);
-                    statusCode = (SecurityStatus)((uint)statusCode >> 8);
+                    message[i] = (byte)(error & 0xFF);
+                    error >>= 8;
                 }
             }
 

@@ -33,9 +33,6 @@ namespace System.Net.Security
     //
     public partial class NegotiateStream : AuthenticatedStream
     {
-        private static AsyncCallback _WriteCallback = new AsyncCallback(WriteCallback);
-        private static AsyncProtocolCallback _ReadCallback = new AsyncProtocolCallback(ReadCallback);
-
         private int _NestedWrite;
         private int _NestedRead;
         private byte[] _ReadHeader;
@@ -183,6 +180,7 @@ namespace System.Net.Security
                         throw new IOException(SR.net_io_encrypt, e);
                     }
 
+#if false
                     if (asyncRequest != null)
                     {
                         // prepare for the next request
@@ -195,6 +193,9 @@ namespace System.Net.Security
                         InnerStream.EndWrite(ar);
                     }
                     else
+#else
+                    GlobalLog.Assert(asyncRequest == null, "NegotiateStream::StartWriting()|asyncRequest == null");
+#endif
                     {
                         InnerStream.Write(outBuffer, 0, encryptedBytes);
                     }
@@ -280,6 +281,7 @@ namespace System.Net.Security
         private int StartFrameHeader(byte[] buffer, int offset, int count, AsyncProtocolRequest asyncRequest)
         {
             int readBytes = 0;
+#if false
             if (asyncRequest != null)
             {
                 asyncRequest.SetNextRequest(_ReadHeader, 0, _ReadHeader.Length, _ReadCallback);
@@ -291,6 +293,9 @@ namespace System.Net.Security
                 readBytes = asyncRequest.Result;
             }
             else
+#else
+            GlobalLog.Assert(asyncRequest == null, "NegotiateStream::StartFrameHeader()|asyncRequest == null");
+#endif
             {
                 readBytes = _FrameReader.ReadPacket(_ReadHeader, 0, _ReadHeader.Length);
             }
@@ -332,6 +337,7 @@ namespace System.Net.Security
             // A user buffer can be shared by many threads in that case decryption/integrity check may fail cause of data corruption.
             //
             EnsureInternalBufferSize(readBytes);
+#if false
             if (asyncRequest != null) //Async
             {
                 asyncRequest.SetNextRequest(InternalBuffer, 0, readBytes, _ReadCallback);
@@ -345,6 +351,9 @@ namespace System.Net.Security
                 readBytes = asyncRequest.Result;
             }
             else //Sync
+#else
+            GlobalLog.Assert(asyncRequest == null, "NegotiateStream::StartFrameBody()|asyncRequest == null");
+#endif
             {
                 readBytes = _FrameReader.ReadPacket(InternalBuffer, 0, readBytes);
             }
@@ -391,6 +400,7 @@ namespace System.Net.Security
 
             return readBytes;
         }
+#if false
         //
         //
         //
@@ -425,6 +435,7 @@ namespace System.Net.Security
                 asyncRequest.CompleteWithError(e);
             }
         }
+
         //
         //
         private static void ReadCallback(AsyncProtocolRequest asyncRequest)
@@ -460,5 +471,6 @@ namespace System.Net.Security
                 asyncRequest.CompleteWithError(e);
             }
         }
+#endif
     }
 }

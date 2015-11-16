@@ -49,14 +49,12 @@ namespace System.Net.Security
                     newRef = Interlocked.Exchange<SafeCredentialReference>(ref _CacheSlots[index], newRef);
                 }
                 if (newRef != null)
-                    newRef.Close();
+                    newRef.Dispose();
             }
             catch (Exception e)
             {
-                if (!NclUtilities.IsFatal(e))
-                {
-                    GlobalLog.Assert("SSPIHandlCache", "Attempted to throw: " + e.ToString());
-                }
+                GlobalLog.Assert("SSPIHandlCache", "Attempted to throw: " + e.ToString());
+                throw;
             }
         }
     }

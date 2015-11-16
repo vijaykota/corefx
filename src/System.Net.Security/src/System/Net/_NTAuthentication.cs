@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -9,14 +10,16 @@ using System.Threading;
 using System.Globalization;
 using System.Security.Authentication.ExtendedProtection;
 using System.Security.Principal;
-using System.Security.Permissions;
 using System.Net.Security;
+using ValidationHelper = System.Net.Logging;
 
 namespace System.Net
 {
     internal class NTAuthentication
     {
+#if false
         static private int s_UniqueGroupId = 1;
+#endif
         static private ContextCallback s_InitializeCallback = new ContextCallback(InitializeCallback);
 
         private bool m_IsServer;
@@ -33,7 +36,7 @@ namespace System.Net
 
         private bool m_IsCompleted;
         private string m_ProtocolName;
-        private SecSizes m_Sizes;
+        private object m_Sizes;
         private string m_LastProtocolName;
         private string m_Package;
 
@@ -74,9 +77,9 @@ namespace System.Net
             get
             {
                 if (!(IsValidContext && IsCompleted))
-                    throw new Win32Exception((int)SecurityStatus.InvalidHandle);
+                    throw new Exception(SR.net_auth_noauth);
 
-                string name = SSPIWrapper.QueryContextAttributes(GlobalSSPI.SSPIAuth, m_SecurityContext, ContextAttribute.Names) as string;
+                string name = NegotiateStreamPal.QueryContextAssociatedName(m_SecurityContext);
                 GlobalLog.Print("NTAuthentication: The context is associated with [" + name + "]");
                 return name;
             }
@@ -148,13 +151,12 @@ namespace System.Net
             {
                 GlobalLog.Assert(IsCompleted && IsValidContext, "NTAuthentication#{0}::OSSupportsExtendedProtection|The context is not completed or invalid.", ValidationHelper.HashString(this));
 
-                int errorCode;
-                SSPIWrapper.QueryContextAttributes(GlobalSSPI.SSPIAuth, m_SecurityContext,
-                    ContextAttribute.ClientSpecifiedSpn, out errorCode);
+                SecurityStatusPal errorCode;
+                NegotiateStreamPal.QueryContextClientSpecifiedSpn(m_SecurityContext, out errorCode);
 
                 // We consider any error other than Unsupported to mean that the underlying OS
                 // supports extended protection.  Most likely it will be TargetUnknown.
-                return ((SecurityStatus)errorCode != SecurityStatus.Unsupported);
+                return (errorCode != SecurityStatusPal.Unsupported);
             }
         }
 
@@ -210,7 +212,7 @@ namespace System.Net
 
                     if (IsValidContext)
                     {
-                        negotiationInfo = SSPIWrapper.QueryContextAttributes(GlobalSSPI.SSPIAuth, m_SecurityContext, ContextAttribute.NegotiationInfo) as NegotiationInfoClass;
+                        negotiationInfo = NegotiateStreamPal.QueryContextNegotiationInfo(m_SecurityContext);
                         if (IsCompleted)
                         {
                             if (negotiationInfo != null)
@@ -226,18 +228,14 @@ namespace System.Net
             }
         }
 
-        internal SecSizes Sizes
+        internal object Sizes
         {
             get
             {
                 GlobalLog.Assert(IsCompleted && IsValidContext, "NTAuthentication#{0}::MaxDataSize|The context is not completed or invalid.", ValidationHelper.HashString(this));
                 if (m_Sizes == null)
                 {
-                    m_Sizes = SSPIWrapper.QueryContextAttributes(
-                                  GlobalSSPI.SSPIAuth,
-                                  m_SecurityContext,
-                                  ContextAttribute.Sizes
-                                  ) as SecSizes;
+                    m_Sizes = NegotiateStreamPal.QueryContextSecuritySizes(m_SecurityContext);
                 }
                 return m_Sizes;
             }
@@ -252,6 +250,7 @@ namespace System.Net
         // .Ctors
         //
 
+#if false
         //
         // Use only for client HTTP authentication
         //
@@ -291,19 +290,22 @@ namespace System.Net
 
             return contextFlags;
         }
+#endif
 
         //
         // This constructor is for a general (non-HTTP) authentication handshake using SSPI
         // Works for both client and server sides.
         //
+#if false
         // Security: we may need to impersonate on user behalf as to temporarily restore original thread token.
         [SecurityPermission(SecurityAction.Assert, Flags = SecurityPermissionFlag.ControlPrincipal)]
+#endif
         internal NTAuthentication(bool isServer, string package, NetworkCredential credential, string spn, ContextFlags requestedContextFlags, ContextAwareResult context, ChannelBinding channelBinding)
         {
             //
             // check if we're using DefaultCredentials
             //
-            if (credential is SystemNetworkCredential)
+            if (credential == CredentialCache.DefaultNetworkCredentials)
             {
                 // CONSIDER: Change to a real runtime check that throws InvalidOperationException to help catch customer race conditions.
 #if DEBUG
@@ -313,13 +315,12 @@ namespace System.Net
                 WindowsIdentity w = context == null ? null : context.Identity;
                 try
                 {
-                    IDisposable ctx = w == null ? null : w.Impersonate();
-                    if (ctx != null)
+                    if (w != null)
                     {
-                        using (ctx)
+                        WindowsIdentity.RunImpersonated(SafeAccessTokenHandle.InvalidHandle, () =>
                         {
                             Initialize(isServer, package, credential, spn, requestedContextFlags, channelBinding);
-                        }
+                        });
                     }
                     else
                     {
@@ -357,15 +358,18 @@ namespace System.Net
         //
         // This overload always uses the default credentials for the process.
         //
+#if false
         [SecurityPermission(SecurityAction.Assert, Flags = SecurityPermissionFlag.ControlPrincipal)]
+#endif
         internal NTAuthentication(bool isServer, string package, string spn, ContextFlags requestedContextFlags, ChannelBinding channelBinding)
         {
             try
             {
-                using (WindowsIdentity.Impersonate(IntPtr.Zero))
+                WindowsIdentity.RunImpersonated(SafeAccessTokenHandle.InvalidHandle, () =>
                 {
-                    Initialize(isServer, package, SystemNetworkCredential.defaultCredential, spn, requestedContextFlags, channelBinding);
-                }
+                    Initialize(isServer, package, CredentialCache.DefaultNetworkCredentials, spn, requestedContextFlags,
+                        channelBinding);
+                });
             }
             catch
             {
@@ -405,8 +409,8 @@ namespace System.Net
         //
         private void Initialize(bool isServer, string package, NetworkCredential credential, string spn, ContextFlags requestedContextFlags, ChannelBinding channelBinding)
         {
-            GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::.ctor() package:" + ValidationHelper.ToString(package) + " spn:" + ValidationHelper.ToString(spn) + " flags :" + requestedContextFlags.ToString());
-            m_TokenSize = SSPIWrapper.GetVerifyPackageInfo(GlobalSSPI.SSPIAuth, package, true).MaxToken;
+            GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::.ctor() package:" + package + " spn:" + spn + " flags :" + requestedContextFlags);
+            m_TokenSize = NegotiateStreamPal.GetMaxTokenSize(package);
             m_IsServer = isServer;
             m_Spn = spn;
             m_SecurityContext = null;
@@ -418,44 +422,18 @@ namespace System.Net
             //
             // check if we're using DefaultCredentials
             //
-            if (credential is SystemNetworkCredential)
+            if (credential == CredentialCache.DefaultNetworkCredentials)
             {
                 GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::.ctor(): using DefaultCredentials");
-                m_CredentialsHandle = SSPIWrapper.AcquireDefaultCredential(
-                                                    GlobalSSPI.SSPIAuth,
-                                                    package,
-                                                    (m_IsServer ? CredentialUse.Inbound : CredentialUse.Outbound));
+                m_CredentialsHandle = NegotiateStreamPal.AcquireDefaultCredential(package, m_IsServer);
                 m_UniqueUserId = "/S"; // save off for unique connection marking ONLY used by HTTP client
             }
-            else if (ComNetOS.IsWin7orLater)
+            else
             {
-                unsafe
-                {
-                    SafeSspiAuthDataHandle authData = null;
-                    try
-                    {
-                        SecurityStatus result = UnsafeNclNativeMethods.SspiHelper.SspiEncodeStringsAsAuthIdentity(
-                            credential.InternalGetUserName(), credential.InternalGetDomain(),
-                            credential.InternalGetPassword(), out authData);
-
-                        if (result != SecurityStatus.OK)
-                        {
-                            if (Logging.On) Logging.PrintError(Logging.Web, SR.Format(SR.net_log_operation_failed_with_error, "SspiEncodeStringsAsAuthIdentity()", String.Format(CultureInfo.CurrentCulture, "0x{0:X}", (int)result)));
-                            throw new Win32Exception((int)result);
-                        }
-
-                        m_CredentialsHandle = SSPIWrapper.AcquireCredentialsHandle(GlobalSSPI.SSPIAuth,
-                            package, (m_IsServer ? CredentialUse.Inbound : CredentialUse.Outbound), ref authData);
-                    }
-                    finally
-                    {
-                        if (authData != null)
-                        {
-                            authData.Close();
-                        }
-                    }
-                }
+                m_CredentialsHandle = NegotiateStreamPal.AcquireCredentialsHandle(package, m_IsServer, credential.UserName, credential.Password, credential.Domain);
             }
+#if false
+            // Code for handling OS before Windows 7
             else
             {
                 //
@@ -471,64 +449,36 @@ namespace System.Net
                 // ATTN:
                 // NetworkCredential class does not differentiate between null and "" but SSPI packages treat these cases differently
                 // For NTLM we want to keep "" for Wdigest.Dll we should use null.
-                AuthIdentity authIdentity = new AuthIdentity(username, credential.InternalGetPassword(), (object)package == (object)NegotiationInfoClass.WDigest && (domain == null || domain.Length == 0) ? null : domain);
-
                 m_UniqueUserId = domain + "/" + username + "/U"; // save off for unique connection marking ONLY used by HTTP client
+                domain = (object) package == (object) NegotiationInfoClass.WDigest && (domain == null || domain.Length == 0)
+                    ? null
+                    : domain;
 
                 GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::.ctor(): using authIdentity:" + authIdentity.ToString());
 
-                m_CredentialsHandle = SSPIWrapper.AcquireCredentialsHandle(
-                                                    GlobalSSPI.SSPIAuth,
-                                                    package,
-                                                    (m_IsServer ? CredentialUse.Inbound : CredentialUse.Outbound),
-                                                    ref authIdentity
-                                                    );
+                m_CredentialsHandle = NegotiateStreamPal.AcquireCredentialsHandle(package, m_IsServer, false,
+                    username, credential.InternalGetPassword(), domain);
             }
+#endif
         }
 
         //
         // Methods
         //
 
-
-        // This will return an client token when conducted authentication on server side'
-        // This token can be used ofr impersanation
-        // We use it to create a WindowsIdentity and hand it out to the server app.
-        internal SafeCloseHandle GetContextToken(out SecurityStatus status)
+        internal SafeDeleteContext GetValidCompletedContext()
         {
-            GlobalLog.Assert(IsCompleted && IsValidContext, "NTAuthentication#{0}::GetContextToken|Should be called only when completed with success, currently is not!", ValidationHelper.HashString(this));
-            GlobalLog.Assert(IsServer, "NTAuthentication#{0}::GetContextToken|The method must not be called by the client side!", ValidationHelper.HashString(this));
-
-            if (!IsValidContext)
+            if (!(IsValidContext && IsCompleted))
             {
-                throw new Win32Exception((int)SecurityStatus.InvalidHandle);
+                return null;
             }
-
-
-            SafeCloseHandle token = null;
-            status = (SecurityStatus)SSPIWrapper.QuerySecurityContextToken(
-                GlobalSSPI.SSPIAuth,
-                m_SecurityContext,
-                out token);
-
-            return token;
-        }
-
-        internal SafeCloseHandle GetContextToken()
-        {
-            SecurityStatus status;
-            SafeCloseHandle token = GetContextToken(out status);
-            if (status != SecurityStatus.OK)
-            {
-                throw new Win32Exception((int)status);
-            }
-            return token;
+            return m_SecurityContext;
         }
 
         internal void CloseContext()
         {
-            if (m_SecurityContext != null && !m_SecurityContext.IsClosed)
-                m_SecurityContext.Close();
+            if (m_SecurityContext != null && !m_SecurityContext.IsInvalid)
+                m_SecurityContext.Dispose();
         }
 
         //
@@ -558,7 +508,7 @@ namespace System.Net
             }
             else
             {
-                SecurityStatus statusCode;
+                SecurityStatusPal statusCode;
 #if TRAVE
                 try
                 {
@@ -597,7 +547,7 @@ namespace System.Net
         // Description:
         // Accepts an incoming binary security blob  and returns
         // an outgoing binary security blob
-        internal byte[] GetOutgoingBlob(byte[] incomingBlob, bool throwOnError, out SecurityStatus statusCode)
+        internal byte[] GetOutgoingBlob(byte[] incomingBlob, bool throwOnError, out SecurityStatusPal statusCode)
         {
             GlobalLog.Enter("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingBlob", ((incomingBlob == null) ? "0" : incomingBlob.Length.ToString(NumberFormatInfo.InvariantInfo)) + " bytes");
 
@@ -605,7 +555,7 @@ namespace System.Net
 
             if (incomingBlob != null)
             {
-                list.Add(new SecurityBuffer(incomingBlob, BufferType.Token));
+                list.Add(new SecurityBuffer(incomingBlob, SecurityBufferType.Token));
             }
             if (m_ChannelBinding != null)
             {
@@ -618,7 +568,7 @@ namespace System.Net
                 inSecurityBufferArray = list.ToArray();
             }
 
-            SecurityBuffer outSecurityBuffer = new SecurityBuffer(m_TokenSize, BufferType.Token);
+            SecurityBuffer outSecurityBuffer = new SecurityBuffer(m_TokenSize, SecurityBufferType.Token);
 
             bool firstTime = m_SecurityContext == null;
             try
@@ -626,28 +576,23 @@ namespace System.Net
                 if (!m_IsServer)
                 {
                     // client session
-                    statusCode = (SecurityStatus)SSPIWrapper.InitializeSecurityContext(
-                        GlobalSSPI.SSPIAuth,
+                    statusCode = NegotiateStreamPal.InitializeSecurityContext(
                         m_CredentialsHandle,
                         ref m_SecurityContext,
                         m_Spn,
                         m_RequestedContextFlags,
-                        Interop.Endianness.Network,
                         inSecurityBufferArray,
                         outSecurityBuffer,
                         ref m_ContextFlags);
 
                     GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingBlob() SSPIWrapper.InitializeSecurityContext() returns statusCode:0x" + ((int)statusCode).ToString("x8", NumberFormatInfo.InvariantInfo) + " (" + statusCode.ToString() + ")");
 
-                    if (statusCode == SecurityStatus.CompleteNeeded)
+                    if (statusCode == SecurityStatusPal.CompleteNeeded)
                     {
                         SecurityBuffer[] inSecurityBuffers = new SecurityBuffer[1];
                         inSecurityBuffers[0] = outSecurityBuffer;
 
-                        statusCode = (SecurityStatus)SSPIWrapper.CompleteAuthToken(
-                            GlobalSSPI.SSPIAuth,
-                            ref m_SecurityContext,
-                            inSecurityBuffers);
+                        statusCode = NegotiateStreamPal.CompleteAuthToken(ref m_SecurityContext, inSecurityBuffers);
 
                         GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingDigestBlob() SSPIWrapper.CompleteAuthToken() returns statusCode:0x" + ((int)statusCode).ToString("x8", NumberFormatInfo.InvariantInfo) + " (" + statusCode.ToString() + ")");
                         outSecurityBuffer.token = null;
@@ -656,12 +601,10 @@ namespace System.Net
                 else
                 {
                     // server session
-                    statusCode = (SecurityStatus)SSPIWrapper.AcceptSecurityContext(
-                        GlobalSSPI.SSPIAuth,
+                    statusCode = NegotiateStreamPal.AcceptSecurityContext(
                         m_CredentialsHandle,
                         ref m_SecurityContext,
                         m_RequestedContextFlags,
-                        Interop.Endianness.Network,
                         inSecurityBufferArray,
                         outSecurityBuffer,
                         ref m_ContextFlags);
@@ -678,17 +621,17 @@ namespace System.Net
                 // Note if the first call was not successfull the handle is physically destroyed here
                 //
                 if (firstTime && m_CredentialsHandle != null)
-                    m_CredentialsHandle.Close();
+                    m_CredentialsHandle.Dispose();
             }
 
 
-            if (((int)statusCode & unchecked((int)0x80000000)) != 0)
+            if (((int)statusCode >= (int)SecurityStatusPal.OutOfMemory))
             {
                 CloseContext();
                 m_IsCompleted = true;
                 if (throwOnError)
                 {
-                    Win32Exception exception = new Win32Exception((int)statusCode);
+                    Exception exception = NegotiateStreamPal.CreateExceptionFromError(statusCode);
                     GlobalLog.Leave("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingBlob", "Win32Exception:" + exception);
                     throw exception;
                 }
@@ -704,16 +647,16 @@ namespace System.Net
             // the return value from SSPI will tell us correctly if the
             // handshake is over or not: http://msdn.microsoft.com/library/psdk/secspi/sspiref_67p0.htm
             // we also have to consider the case in which SSPI formed a new context, in this case we're done as well.
-            if (statusCode == SecurityStatus.OK)
+            if (statusCode == SecurityStatusPal.OK)
             {
                 // we're sucessfully done
-                GlobalLog.Assert(statusCode == SecurityStatus.OK, "NTAuthentication#{0}::GetOutgoingBlob()|statusCode:[0x{1:x8}] ({2}) m_SecurityContext#{3}::Handle:[{4}] [STATUS != OK]", ValidationHelper.HashString(this), (int)statusCode, statusCode, ValidationHelper.HashString(m_SecurityContext), ValidationHelper.ToString(m_SecurityContext));
+                GlobalLog.Assert(statusCode == SecurityStatusPal.OK, "NTAuthentication#{0}::GetOutgoingBlob()|statusCode:[0x{1:x8}] ({2}) m_SecurityContext#{3}::Handle:[{4}] [STATUS != OK]", ValidationHelper.HashString(this), (int)statusCode, statusCode, ValidationHelper.HashString(m_SecurityContext), m_SecurityContext.ToString());
                 m_IsCompleted = true;
             }
             else
             {
                 // we need to continue
-                GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingBlob() need continue statusCode:[0x" + ((int)statusCode).ToString("x8", NumberFormatInfo.InvariantInfo) + "] (" + statusCode.ToString() + ") m_SecurityContext#" + ValidationHelper.HashString(m_SecurityContext) + "::Handle:" + ValidationHelper.ToString(m_SecurityContext) + "]");
+                GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingBlob() need continue statusCode:[0x" + ((int)statusCode).ToString("x8", NumberFormatInfo.InvariantInfo) + "] (" + statusCode.ToString() + ") m_SecurityContext#" + ValidationHelper.HashString(m_SecurityContext) + "::Handle:" + m_SecurityContext + "]");
             }
             //            GlobalLog.Print("out token = " + outSecurityBuffer.ToString());
             //            GlobalLog.Dump(outSecurityBuffer.token);
@@ -721,6 +664,7 @@ namespace System.Net
             return outSecurityBuffer.token;
         }
 
+#if false
         // for Server side (IIS 6.0) see: \\netindex\Sources\inetsrv\iis\iisrearc\iisplus\ulw3\digestprovider.cxx
         // for Client side (HTTP.SYS) see: \\netindex\Sources\net\http\sys\ucauth.c
         internal string GetOutgoingDigestBlob(string incomingBlob, string requestMethod, string requestedUri, string realm, bool isClientPreAuth, bool throwOnError, out SecurityStatus statusCode)
@@ -893,185 +837,28 @@ namespace System.Net
             GlobalLog.Leave("NTAuthentication#" + ValidationHelper.HashString(this) + "::GetOutgoingDigestBlob", outgoingBlob);
             return outgoingBlob;
         }
+#endif
 
         internal int Encrypt(byte[] buffer, int offset, int count, ref byte[] output, uint sequenceNumber)
         {
-            SecSizes sizes = Sizes;
-
-            try
-            {
-                int maxCount = checked(Int32.MaxValue - 4 - sizes.BlockSize - sizes.SecurityTrailer);
-
-                if (count > maxCount || count < 0)
-                {
-                    throw new ArgumentOutOfRangeException("count", SR.Format(SR.net_io_out_range, maxCount));
-                }
-            }
-            catch (Exception e)
-            {
-                if (!NclUtilities.IsFatal(e))
-                {
-                    GlobalLog.Assert(false, "NTAuthentication#" + ValidationHelper.HashString(this) + "::Encrypt", "Arguments out of range.");
-                }
-                throw;
-            }
-
-            int resultSize = count + sizes.SecurityTrailer + sizes.BlockSize;
-            if (output == null || output.Length < resultSize + 4)
-            {
-                output = new byte[resultSize + 4];
-            }
-
-            // make a copy of user data for in-place encryption
-            Buffer.BlockCopy(buffer, offset, output, 4 + sizes.SecurityTrailer, count);
-
-            // prepare buffers TOKEN(signautre), DATA and Padding
-            SecurityBuffer[] securityBuffer = new SecurityBuffer[3];
-            securityBuffer[0] = new SecurityBuffer(output, 4, sizes.SecurityTrailer, BufferType.Token);
-            securityBuffer[1] = new SecurityBuffer(output, 4 + sizes.SecurityTrailer, count, BufferType.Data);
-            securityBuffer[2] = new SecurityBuffer(output, 4 + sizes.SecurityTrailer + count, sizes.BlockSize, BufferType.Padding);
-
-            int errorCode;
-            if (IsConfidentialityFlag)
-            {
-                errorCode = SSPIWrapper.EncryptMessage(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, sequenceNumber);
-            }
-            else
-            {
-                if (IsNTLM)
-                    securityBuffer[1].type |= BufferType.ReadOnlyFlag;
-                errorCode = SSPIWrapper.MakeSignature(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, 0);
-            }
-
-
-            if (errorCode != 0)
-            {
-                GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::Encrypt() throw Error = " + errorCode.ToString("x", NumberFormatInfo.InvariantInfo));
-                throw new Win32Exception(errorCode);
-            }
-
-            // Compacting the result...
-            resultSize = securityBuffer[0].size;
-            bool forceCopy = false;
-            if (resultSize != sizes.SecurityTrailer)
-            {
-                forceCopy = true;
-                Buffer.BlockCopy(output, securityBuffer[1].offset, output, 4 + resultSize, securityBuffer[1].size);
-            }
-
-            resultSize += securityBuffer[1].size;
-            if (securityBuffer[2].size != 0 && (forceCopy || resultSize != (count + sizes.SecurityTrailer)))
-                Buffer.BlockCopy(output, securityBuffer[2].offset, output, 4 + resultSize, securityBuffer[2].size);
-
-            resultSize += securityBuffer[2].size;
-
-            unchecked
-            {
-                output[0] = (byte)((resultSize) & 0xFF);
-                output[1] = (byte)(((resultSize) >> 8) & 0xFF);
-                output[2] = (byte)(((resultSize) >> 16) & 0xFF);
-                output[3] = (byte)(((resultSize) >> 24) & 0xFF);
-            }
-            return resultSize + 4;
+            return NegotiateStreamPal.Encrypt(m_SecurityContext, Sizes, IsConfidentialityFlag, IsNTLM, buffer, offset, count,
+                ref output, sequenceNumber);
         }
 
         internal int Decrypt(byte[] payload, int offset, int count, out int newOffset, uint expectedSeqNumber)
         {
-            if (offset < 0 || offset > (payload == null ? 0 : payload.Length))
-            {
-                GlobalLog.Assert(false, "NTAuthentication#" + ValidationHelper.HashString(this) + "::Decrypt", "Argument 'offset' out of range.");
-                throw new ArgumentOutOfRangeException("offset");
-            }
-            if (count < 0 || count > (payload == null ? 0 : payload.Length - offset))
-            {
-                GlobalLog.Assert(false, "NTAuthentication#" + ValidationHelper.HashString(this) + "::Decrypt", "Argument 'count' out of range.");
-                throw new ArgumentOutOfRangeException("count");
-            }
-
-            if (IsNTLM)
-                return DecryptNtlm(payload, offset, count, out newOffset, expectedSeqNumber);
-
-            //
-            // Kerberos and up
-            //
-
-            SecurityBuffer[] securityBuffer = new SecurityBuffer[2];
-            securityBuffer[0] = new SecurityBuffer(payload, offset, count, BufferType.Stream);
-            securityBuffer[1] = new SecurityBuffer(0, BufferType.Data);
-
-            int errorCode;
-            if (IsConfidentialityFlag)
-            {
-                errorCode = SSPIWrapper.DecryptMessage(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, expectedSeqNumber);
-            }
-            else
-            {
-                errorCode = SSPIWrapper.VerifySignature(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, expectedSeqNumber);
-            }
-
-            if (errorCode != 0)
-            {
-                GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::Decrypt() throw Error = " + errorCode.ToString("x", NumberFormatInfo.InvariantInfo));
-                throw new Win32Exception(errorCode);
-            }
-
-            if (securityBuffer[1].type != BufferType.Data)
-                throw new InternalException();
-
-            newOffset = securityBuffer[1].offset;
-            return securityBuffer[1].size;
+            return NegotiateStreamPal.Decrypt(m_SecurityContext, IsConfidentialityFlag, IsNTLM, payload, offset, count,
+                out newOffset, expectedSeqNumber);
         }
 
         private string GetClientSpecifiedSpn()
         {
             GlobalLog.Assert(IsValidContext && IsCompleted, "NTAuthentication: Trying to get the client SPN before handshaking is done!");
 
-            string spn = SSPIWrapper.QueryContextAttributes(GlobalSSPI.SSPIAuth, m_SecurityContext,
-                ContextAttribute.ClientSpecifiedSpn) as string;
+            string spn = NegotiateStreamPal.QueryContextClientSpecifiedSpn(m_SecurityContext);
 
             GlobalLog.Print("NTAuthentication: The client specified SPN is [" + spn + "]");
             return spn;
-        }
-
-        //
-        private int DecryptNtlm(byte[] payload, int offset, int count, out int newOffset, uint expectedSeqNumber)
-        {
-            // For the most part the arguments are verified in Encrypt().
-            if (count < 16)
-            {
-                GlobalLog.Assert(false, "NTAuthentication#" + ValidationHelper.HashString(this) + "::DecryptNtlm", "Argument 'count' out of range.");
-                throw new ArgumentOutOfRangeException("count");
-            }
-
-            SecurityBuffer[] securityBuffer = new SecurityBuffer[2];
-            securityBuffer[0] = new SecurityBuffer(payload, offset, 16, BufferType.Token);
-            securityBuffer[1] = new SecurityBuffer(payload, offset + 16, count - 16, BufferType.Data);
-
-            int errorCode;
-            BufferType realDataType = BufferType.Data;
-
-            if (IsConfidentialityFlag)
-            {
-                errorCode = SSPIWrapper.DecryptMessage(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, expectedSeqNumber);
-            }
-            else
-            {
-                realDataType |= BufferType.ReadOnlyFlag;
-                securityBuffer[1].type = realDataType;
-                errorCode = SSPIWrapper.VerifySignature(GlobalSSPI.SSPIAuth, m_SecurityContext, securityBuffer, expectedSeqNumber);
-            }
-
-            if (errorCode != 0)
-            {
-                GlobalLog.Print("NTAuthentication#" + ValidationHelper.HashString(this) + "::Decrypt() throw Error = " + errorCode.ToString("x", NumberFormatInfo.InvariantInfo));
-                throw new Win32Exception(errorCode);
-            }
-
-            if (securityBuffer[1].type != realDataType)
-                throw new InternalException();
-
-            newOffset = securityBuffer[1].offset;
-            return securityBuffer[1].size;
         }
 
         //
@@ -1111,39 +898,7 @@ namespace System.Net
                 throw new ArgumentOutOfRangeException("count");
             }
 
-            // setup security buffers for ssp call
-            // one points at signed data
-            // two will receive payload if signature is valid
-            SecurityBuffer[] securityBuffer = new SecurityBuffer[2];
-            securityBuffer[0] =
-                new SecurityBuffer(buffer, offset, count, BufferType.Stream);
-            securityBuffer[1] = new SecurityBuffer(0, BufferType.Data);
-
-            // call SSP function
-            int errorCode = SSPIWrapper.VerifySignature(
-                                GlobalSSPI.SSPIAuth,
-                                m_SecurityContext,
-                                securityBuffer,
-                                0);
-
-            // throw if error
-            if (errorCode != 0)
-            {
-                GlobalLog.Print(
-                            "NTAuthentication#" +
-                            ValidationHelper.HashString(this) +
-                            "::VerifySignature() threw Error = " +
-                            errorCode.ToString("x",
-                                NumberFormatInfo.InvariantInfo));
-                throw new Win32Exception(errorCode);
-            }
-
-            // not sure why this is here - retained from Encrypt code above
-            if (securityBuffer[1].type != BufferType.Data)
-                throw new InternalException();
-
-            // return validated payload size 
-            return securityBuffer[1].size;
+            return NegotiateStreamPal.VerifySignature(m_SecurityContext, buffer, offset, count);
         }
 
         //
@@ -1162,73 +917,7 @@ namespace System.Net
                         int count,
                         ref byte[] output)
         {
-            SecSizes sizes = Sizes;
-
-
-            // alloc new output buffer if not supplied or too small
-            int resultSize = count + sizes.MaxSignature;
-            if (output == null || output.Length < resultSize)
-            {
-                output = new byte[resultSize];
-            }
-
-            // make a copy of user data for in-place encryption
-            Buffer.BlockCopy(buffer, offset, output, sizes.MaxSignature, count);
-
-            // setup security buffers for ssp call
-            SecurityBuffer[] securityBuffer = new SecurityBuffer[2];
-            securityBuffer[0] = new SecurityBuffer(output, 0, sizes.MaxSignature, BufferType.Token);
-            securityBuffer[1] = new SecurityBuffer(output, sizes.MaxSignature, count, BufferType.Data);
-
-            // call SSP Function
-            int errorCode = SSPIWrapper.MakeSignature(
-                                GlobalSSPI.SSPIAuth,
-                                m_SecurityContext,
-                                securityBuffer,
-                                0);
-
-            // throw if error
-            if (errorCode != 0)
-            {
-                GlobalLog.Print(
-                    "NTAuthentication#" +
-                    ValidationHelper.HashString(this) +
-                    "::Encrypt() throw Error = " +
-                    errorCode.ToString("x", NumberFormatInfo.InvariantInfo));
-                throw new Win32Exception(errorCode);
-            }
-
-            // return signed size
-            return securityBuffer[0].size + securityBuffer[1].size;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    internal struct AuthIdentity
-    {
-        // see SEC_WINNT_AUTH_IDENTITY_W
-        internal string UserName;
-        internal int UserNameLength;
-        internal string Domain;
-        internal int DomainLength;
-        internal string Password;
-        internal int PasswordLength;
-        internal int Flags;
-
-        internal AuthIdentity(string userName, string password, string domain)
-        {
-            UserName = userName;
-            UserNameLength = userName == null ? 0 : userName.Length;
-            Password = password;
-            PasswordLength = password == null ? 0 : password.Length;
-            Domain = domain;
-            DomainLength = domain == null ? 0 : domain.Length;
-            // Flags are 2 for Unicode and 1 for ANSI. We use 2 on NT and 1 on Win9x.
-            Flags = 2;
-        }
-        public override string ToString()
-        {
-            return ValidationHelper.ToString(Domain) + "\\" + ValidationHelper.ToString(UserName);
+            return NegotiateStreamPal.MakeSignature(m_SecurityContext, Sizes, buffer, offset, count, ref output);
         }
     }
 }

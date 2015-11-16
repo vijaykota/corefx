@@ -70,7 +70,7 @@ namespace System.Net.Security
         //
         public virtual void AuthenticateAsClient()
         {
-            AuthenticateAsClient((NetworkCredential)CredentialCache.DefaultCredentials, null, string.Empty, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
+            AuthenticateAsClient(CredentialCache.DefaultNetworkCredentials, null, string.Empty, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
         }
         public virtual void AuthenticateAsClient(NetworkCredential credential, string targetName)
         {
@@ -109,7 +109,7 @@ namespace System.Net.Security
         //
         public virtual IAsyncResult BeginAuthenticateAsClient(AsyncCallback asyncCallback, object asyncState)
         {
-            return BeginAuthenticateAsClient((NetworkCredential)CredentialCache.DefaultCredentials, null, string.Empty,
+            return BeginAuthenticateAsClient(CredentialCache.DefaultNetworkCredentials, null, string.Empty,
                                            ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification,
                                            asyncCallback, asyncState);
         }
@@ -180,12 +180,12 @@ namespace System.Net.Security
         //
         public virtual void AuthenticateAsServer()
         {
-            AuthenticateAsServer((NetworkCredential)CredentialCache.DefaultCredentials, null, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
+            AuthenticateAsServer(CredentialCache.DefaultNetworkCredentials, null, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
         }
         //
         public virtual void AuthenticateAsServer(ExtendedProtectionPolicy policy)
         {
-            AuthenticateAsServer((NetworkCredential)CredentialCache.DefaultCredentials, policy, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
+            AuthenticateAsServer(CredentialCache.DefaultNetworkCredentials, policy, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification);
         }
         //
         public virtual void AuthenticateAsServer(NetworkCredential credential,
@@ -214,12 +214,12 @@ namespace System.Net.Security
         //
         public virtual IAsyncResult BeginAuthenticateAsServer(AsyncCallback asyncCallback, object asyncState)
         {
-            return BeginAuthenticateAsServer((NetworkCredential)CredentialCache.DefaultCredentials, null, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification, asyncCallback, asyncState);
+            return BeginAuthenticateAsServer(CredentialCache.DefaultNetworkCredentials, null, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification, asyncCallback, asyncState);
         }
         //
         public virtual IAsyncResult BeginAuthenticateAsServer(ExtendedProtectionPolicy policy, AsyncCallback asyncCallback, object asyncState)
         {
-            return BeginAuthenticateAsServer((NetworkCredential)CredentialCache.DefaultCredentials, policy, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification, asyncCallback, asyncState);
+            return BeginAuthenticateAsServer(CredentialCache.DefaultNetworkCredentials, policy, ProtectionLevel.EncryptAndSign, TokenImpersonationLevel.Identification, asyncCallback, asyncState);
         }
         //
         public virtual IAsyncResult BeginAuthenticateAsServer(NetworkCredential credential,
@@ -600,6 +600,8 @@ namespace System.Net.Security
             }
 #endif
         }
+
+#if false
         //
         //
         public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback asyncCallback, object asyncState)
@@ -736,6 +738,7 @@ namespace System.Net.Security
             }
 #endif
         }
+#endif
     }
 }
 

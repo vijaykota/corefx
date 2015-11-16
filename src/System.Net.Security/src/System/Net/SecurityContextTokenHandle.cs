@@ -8,28 +8,26 @@ using System.Threading;
 namespace System.Net.Security
 {
 #if DEBUG
-    internal sealed class SecurityContextTokenHandle : DebugCriticalHandleZeroOrMinusOneIsInvalid
+    internal sealed class SecurityContextTokenHandle : DebugSafeHandle
     {
 #else
-    internal sealed class SecurityContextTokenHandle : CriticalHandleZeroOrMinusOneIsInvalid
+    internal sealed class SecurityContextTokenHandle : SafeHandle
     {
 #endif
         private int _disposed;
 
-        private SecurityContextTokenHandle() : base()
+        private SecurityContextTokenHandle() : base(IntPtr.Zero, true)
         {
+        }
+
+        public override bool IsInvalid
+        {
+            get { return (handle == IntPtr.Zero) || (handle == new IntPtr(-1)); }
         }
 
         protected override bool ReleaseHandle()
         {
-            if (!IsInvalid)
-            {
-                if (Interlocked.Increment(ref _disposed) == 1)
-                {
-                    return Interop.mincore.CloseHandle(handle);
-                }
-            }
-            return true;
+            return Interop.mincore.CloseHandle(handle);
         }
     }
 }

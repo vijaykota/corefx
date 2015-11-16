@@ -3,6 +3,7 @@
 
 using Microsoft.Win32.SafeHandles;
 
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Authentication.ExtendedProtection;
@@ -21,6 +22,18 @@ namespace System.Net.Security
 #endif
         public SafeSspiAuthDataHandle() : base(true)
         {
+        }
+
+        public static SafeSspiAuthDataHandle Create(string username, string password, string domain)
+        {
+            SafeSspiAuthDataHandle authData = null;
+            Interop.SecurityStatus result = Interop.Secur32.SspiEncodeStringsAsAuthIdentity(username, domain, password,
+                out authData);
+            if (result != Interop.SecurityStatus.OK)
+            {
+                throw new Win32Exception((int)result);
+            }
+            return authData;
         }
 
         protected override bool ReleaseHandle()
