@@ -23,22 +23,56 @@ namespace System.Net.Security
     //
     internal partial class NegoState
     {
+        private class NNSProtocolException : Exception
+        {
+            internal static readonly Exception Instance;
+
+            static NNSProtocolException()
+            {
+                Instance = new NNSProtocolException();
+            }
+
+            // MS-NNS Protocol requires a Windows error code to be  
+            // passed back. Hence, we always use NTE_FAIL  
+            private NNSProtocolException() : base()
+            {
+                HResult = unchecked((int) 0x80090020);
+            }
+        }
+
+
         internal IIdentity GetIdentity()
         {
-            throw new PlatformNotSupportedException();
+            string name = _context.IsServer ? _context.AssociatedName : _context.Spn;
+            string protocol  = _context.ProtocolName;
+
+            if (_context.IsServer)
+            {
+                Debug.Assert(
+                    string.Equals(protocol, NegotiationInfoClass.Kerberos, StringComparison.OrdinalIgnoreCase),
+                    "Unsupported protocol: " + protocol);
+
+                SecurityStatusPal status;
+                SafeDeleteGssContext securityContext = _context.GetContext(out status) as SafeDeleteGssContext;
+                if (securityContext == null)
+                {
+                    throw NNSProtocolException.Instance;
+                }
+            }
+
+            return new GenericIdentity(name, protocol);
+
         }
 
         internal static string QueryContextAssociatedName(SafeDeleteContext securityContext)
         {
-            return Interop.GssApi.GetSourceName(securityContext.GssContext);
+            throw new PlatformNotSupportedException();
 
         }
 
         internal static string QueryContextAuthenticationPackage(SafeDeleteContext securityContext)
         {
-            NegotiationInfoClass negotiationInfoClass = new NegotiationInfoClass(securityContext, Int32.MaxValue);
-           return negotiationInfoClass.AuthenticationPackage;
-
+            throw new PlatformNotSupportedException();
         }
 
         internal static object QueryContextSizes(SafeDeleteContext securityContext)
@@ -58,9 +92,7 @@ namespace System.Net.Security
 
         internal static SafeFreeCredentials AcquireDefaultCredential(string package, bool isServer)
         {
-            SafeFreeCredentials outCredential;
-            AcquireCredentialsHandle(package, isServer, string.Empty, string.Empty, string.Empty, out outCredential);
-            return outCredential;
+           return AcquireCredentialsHandle(package, isServer, new NetworkCredential(string.Empty, string.Empty, string.Empty));
         }
 
         internal static SafeFreeCredentials AcquireCredentialsHandle(string package, bool isServer, NetworkCredential credential)
@@ -73,10 +105,10 @@ namespace System.Net.Security
                 // unexpired Kerberos TGT to get service-specific ticket.
                 outCredential = new SafeFreeGssCredentials(string.Empty, string.Empty, string.Empty);
             }
-            else if (string.Equals(package, "NTLM"))
-            {
-                outCredential = new SafeFreeNtlmCredentials(credential.UserName, credential.Password, credential.Domain);
-            }
+            //else if (string.Equals(package, "NTLM"))
+            //{
+            //    outCredential = new SafeFreeNtlmCredentials(credential.UserName, credential.Password, credential.Domain);
+            //}
             else
             {
                 outCredential = new SafeFreeGssCredentials(credential.UserName, credential.Password, credential.Domain);
@@ -106,8 +138,8 @@ namespace System.Net.Security
             //    return InitializeNtlmSecurityContext((SafeFreeNtlmCredentials) credentialsHandle, ref securityContext,
             //        requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer);
             //}
-            return EstablishSecurityContext((SafeFreeGssCredentials) credentialsHandle, ref securityContext, false, spn,
-                requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer, ref contextFlags);
+           return EstablishSecurityContext((SafeFreeGssCredentials) credentialsHandle, ref securityContext, false, spn,
+                 requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer, ref contextFlags);
 
         }
 
@@ -126,18 +158,28 @@ namespace System.Net.Security
             SecurityBuffer outSecurityBuffer,
             ref ContextFlagsPal contextFlags)
         {
-            return EstablishSecurityContext((SafeFreeGssCredentials)credentialsHandle, ref securityContext, false, string.Empty, (Interop.NetSecurity.GssFlags)requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer, ref contextFlags);
-
+            return EstablishSecurityContext((SafeFreeGssCredentials)credentialsHandle, ref securityContext, false, string.Empty, requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer, ref contextFlags);
         }
 
         private static void ValidateImpersonationLevel(TokenImpersonationLevel impersonationLevel)
         {
-            throw new PlatformNotSupportedException();
+            if (impersonationLevel != TokenImpersonationLevel.Identification)
+            {
+                throw new ArgumentOutOfRangeException("impersonationLevel", impersonationLevel.ToString(),
+                    SR.net_auth_supported_impl_levels);
+            }
+
         }
 
         private static void ThrowCredentialException(long error)
         {
-            throw new PlatformNotSupportedException();
+            // HResult corr. to LogonDenied  
+                 //if ((int)error == NegoState)
+                 // throw new InvalidCredentialException(SR.net_auth_bad_client_creds);
+         
+                 //    if ((int)error == NegoState.ERROR_TRUST_FAILURE)
+                 // throw new AuthenticationException(SR.net_auth_context_expectation_remote);
+
         }
 
         private static bool IsLogonDeniedException(Exception exception)
@@ -147,7 +189,7 @@ namespace System.Net.Security
 
         internal static Exception CreateExceptionFromError(SecurityStatusPal statusCode)
         {
-            throw new PlatformNotSupportedException();
+            return NNSProtocolException.Instance;
         }
 
         internal static int Encrypt(
@@ -163,7 +205,7 @@ namespace System.Net.Security
         {
             //if (securityContext is SafeDeleteGssContext)
             //{
-                // Sequence number is not used by libgssapi
+                // Sequence number is not used by NetSecurity
                 SafeDeleteGssContext gssContext = securityContext as SafeDeleteGssContext;
                 return Interop.GssApi.Encrypt(gssContext.GssContext, gssContext.NeedsEncryption, buffer, offset, count, out output);
             //}
@@ -190,7 +232,7 @@ namespace System.Net.Security
         {
             //if (securityContext is SafeDeleteGssContext)
             //{
-                // Sequence number is not used by libgssapi
+                // Sequence number is not used by NetSecurity
                 newOffset = offset;
                 return Interop.GssApi.Decrypt(((SafeDeleteGssContext)securityContext).GssContext, buffer, offset, count);
             //}
@@ -215,17 +257,18 @@ namespace System.Net.Security
 
         private static SecurityStatusPal EstablishSecurityContext(
           SafeFreeGssCredentials credential,
-          ref SafeHandle context,
+          ref SafeDeleteContext context,
           bool isNtlm,
           string targetName,
-          Interop.NetSecurity.GssFlags inFlags,
+          ContextFlagsPal inFlags,
           SecurityBuffer inputBuffer,
           SecurityBuffer outputBuffer,
-          ref uint outFlags)
+          ref ContextFlagsPal outFlags)
         {
+            uint outputFlags;
             if (context == null)
             {
-                context = new SafeDeleteGssContext(targetName, inFlags);
+                context = new SafeDeleteGssContext(targetName,(uint) inFlags) as SafeDeleteContext;
             }
 
             SafeDeleteGssContext gssContext = (SafeDeleteGssContext)context;
@@ -234,19 +277,21 @@ namespace System.Net.Security
                 SafeGssContextHandle contextHandle = gssContext.GssContext;
                 bool done = Interop.GssApi.EstablishSecurityContext(
                                   ref contextHandle,
-                                  credential.GssCredential,
+                                  credential,
                                   isNtlm,
                                   gssContext.TargetName,
-                                  inFlags,
+                                  GetInteropGssFromContextFlagsPal(inFlags),
                                   inputBuffer.token,
                                   out outputBuffer.token,
-                                  out outFlags);
+                                  out outputFlags);
 
                 Debug.Assert(outputBuffer.token != null, "Unexpected null buffer returned by GssApi");
                 outputBuffer.size = outputBuffer.token.Length;
                 outputBuffer.offset = 0;
 
-                // Save the inner context handle for further calls to libgssapi
+                // Save the inner context handle for further calls to NetSecurity
+                outFlags = GetContextFlagsPalFromInteropGss((Interop.NetSecurity.GssFlags)outputFlags);
+
                 if (gssContext.IsInvalid)
                 {
                     gssContext.SetHandle(credential, contextHandle);
@@ -257,6 +302,69 @@ namespace System.Net.Security
             {
                 return SecurityStatusPal.InternalError;
             }
+        }
+        private static ContextFlagsPal GetContextFlagsPalFromInteropGss(Interop.NetSecurity.GssFlags gssFlags)
+        {
+            ContextFlagsPal flags = ContextFlagsPal.Zero;
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_INTEG_FLAG) != 0)
+            {
+                flags |= (ContextFlagsPal.AcceptIntegrity | ContextFlagsPal.InitIntegrity);
+            }
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_CONF_FLAG) != 0)
+            {
+                flags |= ContextFlagsPal.Confidentiality;
+            }
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_IDENTIFY_FLAG) != 0)
+            {
+                flags |= ContextFlagsPal.InitIdentify;
+            }
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_MUTUAL_FLAG) != 0)
+            {
+                flags |= ContextFlagsPal.MutualAuth;
+            }
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_REPLAY_FLAG) != 0)
+            {
+                flags |= ContextFlagsPal.ReplayDetect;
+            }
+            if ((gssFlags & Interop.NetSecurity.GssFlags.GSS_C_SEQUENCE_FLAG) != 0)
+            {
+                flags |= ContextFlagsPal.SequenceDetect;
+            }
+            return flags;
+        }
+
+        private static Interop.NetSecurity.GssFlags GetInteropGssFromContextFlagsPal(ContextFlagsPal flags)
+        {
+            Interop.NetSecurity.GssFlags gssFlags = (Interop.NetSecurity.GssFlags)0;
+            if ((flags & ContextFlagsPal.AcceptIntegrity) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_INTEG_FLAG;
+            }
+            if ((flags & ContextFlagsPal.Confidentiality) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_CONF_FLAG;
+            }
+            if ((flags & ContextFlagsPal.InitIdentify) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_IDENTIFY_FLAG;
+            }
+            if ((flags & ContextFlagsPal.InitIntegrity) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_INTEG_FLAG;
+            }
+            if ((flags & ContextFlagsPal.MutualAuth) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_MUTUAL_FLAG;
+            }
+            if ((flags & ContextFlagsPal.ReplayDetect) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_REPLAY_FLAG;
+            }
+            if ((flags & ContextFlagsPal.SequenceDetect) != 0)
+            {
+                gssFlags |= Interop.NetSecurity.GssFlags.GSS_C_SEQUENCE_FLAG;
+            }
+            return gssFlags;
         }
 
     }
