@@ -9,7 +9,7 @@ using Microsoft.Win32.SafeHandles;
 
 internal static partial class Interop
 {
-    internal static class GssApi
+    internal static partial class NetSecurity
     {
         internal static bool EstablishSecurityContext(
             ref SafeGssContextHandle context,
@@ -77,7 +77,7 @@ internal static partial class Interop
             SafeGssBufferHandle outputToken;
             int msgLength;
             NetSecurity.Status minorStatus;
-            NetSecurity.Status status = NetSecurity.Wrap(out minorStatus, context, encrypt, buffer, offset, count, out outputToken, out msgLength);
+            NetSecurity.Status status = NetSecurity.Wrap(out minorStatus, context, (encrypt?1:0), buffer, offset, count, out outputToken, out msgLength);
             using (outputToken)
             {
                 if (status != NetSecurity.Status.GSS_S_COMPLETE)

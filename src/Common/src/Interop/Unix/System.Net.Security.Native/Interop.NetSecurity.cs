@@ -93,7 +93,7 @@ internal static partial class Interop
         internal static extern Status Wrap(
             out Status minorStatus,
             SafeGssContextHandle contextHandle,
-            bool isEncrypt,
+            int isEncrypt,
             byte[] inputBytes,
             int offset,
             int count,

@@ -195,7 +195,7 @@ namespace System.Net
         {
             get
             {
-                if ((IsCompleted && IsValidContext))
+                if (!(IsCompleted && IsValidContext))
                 {
                     if (GlobalLog.IsEnabled)
                     {
@@ -459,7 +459,7 @@ namespace System.Net
                         LoggingHash.HashString(this), (int) statusCode, statusCode,
                         LoggingHash.HashString(_securityContext), LoggingHash.ObjectToString(_securityContext));
                 }
-                Debug.Fail("NTAuthentication#" + LoggingHash.HashString(this) + "::GetOutgoingBlob()|statusCode:[0x" + ((int)statusCode).ToString("x8") + "] (" + statusCode + ") m_SecurityContext#" + LoggingHash.HashString(_securityContext) + "::Handle:[" + LoggingHash.ObjectToString(_securityContext) + "] [STATUS != OK]");
+                //vijayko Debug.Fail("NTAuthentication#" + LoggingHash.HashString(this) + "::GetOutgoingBlob()|statusCode:[0x" + ((int)statusCode).ToString("x8") + "] (" + statusCode + ") m_SecurityContext#" + LoggingHash.HashString(_securityContext) + "::Handle:[" + LoggingHash.ObjectToString(_securityContext) + "] [STATUS != OK]");
                 _isCompleted = true;
             }
             else if (GlobalLog.IsEnabled)

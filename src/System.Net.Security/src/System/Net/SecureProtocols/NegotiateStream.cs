@@ -96,7 +96,7 @@ namespace System.Net.Security
 #endif
                 _negoState.ValidateCreateContext(_package, false, credential, targetName, binding, requiredProtectionLevel, allowedImpersonationLevel);
 
-                LazyAsyncResult result = new LazyAsyncResult(_negoState, asyncState, asyncCallback);
+            LazyAsyncResult result = null;// new LazyAsyncResult(_negoState, asyncState, asyncCallback);
                 _negoState.ProcessAuthentication(result);
 
                 return result;
@@ -179,7 +179,8 @@ namespace System.Net.Security
 
         public virtual Task AuthenticateAsClientAsync(NetworkCredential credential, string targetName)
         {
-            return Task.Factory.FromAsync(BeginAuthenticateAsClient, EndAuthenticateAsClient, credential, targetName, null);
+            //vijayko return Task.Factory.FromAsync(BeginAuthenticateAsClient, EndAuthenticateAsClient, credential, targetName, null);
+            return Task.Run(() => BeginAuthenticateAsClient(credential, targetName, null, null));
         }
 
         public virtual Task AuthenticateAsClientAsync(
