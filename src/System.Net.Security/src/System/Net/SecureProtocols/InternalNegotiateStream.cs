@@ -301,7 +301,7 @@ namespace System.Net.Security
                 return 0;
             }
 
-            if ((readBytes == _ReadHeader.Length))
+            if (!(readBytes == _ReadHeader.Length))
             {
                 if (GlobalLog.IsEnabled)
                 {

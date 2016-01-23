@@ -23,20 +23,24 @@ namespace System.Net.Security
     //
     internal partial class NegoState
     {
+        private const int LogonDenied = unchecked((int) 0x8009030C);
+
         private class NNSProtocolException : Exception
         {
             internal static readonly Exception Instance;
+
+            // MS-NNS Protocol requires a Windows error code to be  
+            // passed back. Hence, we always use NTE_FAIL  
+            private const int NTE_FAIL = unchecked((int) 0x80090020);
 
             static NNSProtocolException()
             {
                 Instance = new NNSProtocolException();
             }
 
-            // MS-NNS Protocol requires a Windows error code to be  
-            // passed back. Hence, we always use NTE_FAIL  
             private NNSProtocolException() : base()
             {
-                HResult = unchecked((int) 0x80090020);
+                HResult = NTE_FAIL;
             }
         }
 
@@ -45,7 +49,7 @@ namespace System.Net.Security
         {
             Debug.Assert(!_context.IsServer, "GetIdentity: Server is not supported");
 
-            string name = _context.IsServer ? _context.AssociatedName : _context.Spn;
+            string name = _context.Spn;
             string protocol  = _context.ProtocolName;
 
             return new GenericIdentity(name, protocol);
@@ -60,17 +64,19 @@ namespace System.Net.Security
 
         internal static string QueryContextAuthenticationPackage(SafeDeleteContext securityContext)
         {
-            throw new PlatformNotSupportedException();
+            return NegotiationInfoClass.Kerberos;
         }
 
         internal static object QueryContextSizes(SafeDeleteContext securityContext)
         {
-            throw new PlatformNotSupportedException();
+            // This return value is never used
+            return null;
         }
 
         internal static int QueryMaxTokenSize(string package)
         {
-            throw new PlatformNotSupportedException();
+            // The value is unused in non-Windows code paths
+            return 0;
         }
 
         internal static string QueryContextClientSpecifiedSpn(SafeDeleteContext securityContext)
@@ -91,7 +97,7 @@ namespace System.Net.Security
             {
                 // In client case, equivalent of default credentials is to use previous,
                 // unexpired Kerberos TGT to get service-specific ticket.
-                outCredential = new SafeFreeNegoCredentials(false, string.Empty, string.Empty, string.Empty);
+                outCredential = new SafeFreeNegoCredentials(string.Empty, string.Empty, string.Empty);
             }
             else
             {
@@ -100,7 +106,7 @@ namespace System.Net.Security
                 {
                     throw new NotImplementedException("AcquireCredentialsHandle: NTLM is not yet supported");
                 }
-                outCredential = new SafeFreeNegoCredentials(isNtlm, credential.UserName, credential.Password, credential.Domain);
+                outCredential = new SafeFreeNegoCredentials(credential.UserName, credential.Password, credential.Domain);
             }
             return outCredential;
 
@@ -116,21 +122,28 @@ namespace System.Net.Security
             ref ContextFlagsPal contextFlags)
         {
             // TODO (Issue #3718): The second buffer can contain a channel binding which is not yet supported 
-            if (inSecurityBufferArray.Length > 1)
+            if ((null != inSecurityBufferArray) && (inSecurityBufferArray.Length > 1))
             {
                 throw new PlatformNotSupportedException("No support for channel binding on non-Windows");
             }
 
-            return EstablishSecurityContext((SafeFreeNegoCredentials) credentialsHandle, ref securityContext, spn,
-                requestedContextFlags, inSecurityBufferArray[0], outSecurityBuffer, ref contextFlags);
-
+            return EstablishSecurityContext(
+                (SafeFreeNegoCredentials) credentialsHandle,
+                ref securityContext,
+                false,
+                spn,
+                requestedContextFlags,
+                ((inSecurityBufferArray != null) ? inSecurityBufferArray[0] : null),
+                outSecurityBuffer,
+                ref contextFlags);
         }
 
         internal static SecurityStatusPal CompleteAuthToken(
             ref SafeDeleteContext securityContext,
             SecurityBuffer[] inSecurityBufferArray)
         {
-            throw new PlatformNotSupportedException();
+            Debug.Assert(inSecurityBufferArray[0].size == 0, "Unexpected output token in last leg of InitSecContext");
+            return SecurityStatusPal.OK;
         }
 
         internal static SecurityStatusPal AcceptSecurityContext(
@@ -156,18 +169,23 @@ namespace System.Net.Security
 
         private static void ThrowCredentialException(long error)
         {
-            // HResult corr. to LogonDenied  
-                 //if ((int)error == NegoState)
-                 // throw new InvalidCredentialException(SR.net_auth_bad_client_creds);
-         
-                 //    if ((int)error == NegoState.ERROR_TRUST_FAILURE)
-                 // throw new AuthenticationException(SR.net_auth_context_expectation_remote);
+            string message = SR.net_auth_alert;
+            if ((int)error == LogonDenied)
+            {
+                message = SR.net_auth_bad_client_creds;
+            }
 
+            if ((int)error == NegoState.ERROR_TRUST_FAILURE)
+            {
+                message = SR.net_auth_context_expectation_remote;
+            }
+
+            throw new AuthenticationException(message, null);
         }
 
         private static bool IsLogonDeniedException(Exception exception)
         {
-            throw new PlatformNotSupportedException();
+            return exception.HResult == LogonDenied;
         }
 
         internal static Exception CreateExceptionFromError(SecurityStatusPal statusCode)
@@ -186,8 +204,15 @@ namespace System.Net.Security
             ref byte[] output,
             uint sequenceNumber)
         {
-                SafeDeleteNegoContext gssContext = securityContext as SafeDeleteNegoContext;
-                return Interop.GssApi.Encrypt(gssContext.GssContext, isConfidential, buffer, offset, count, out output);
+            Debug.Assert(!isNtlm, "Encrypt: NTLM is not yet supported");
+            SafeDeleteNegoContext gssContext = securityContext as SafeDeleteNegoContext;
+            byte[] tempOutput;
+            Interop.NetSecurity.Encrypt(gssContext.GssContext, isConfidential, buffer, offset, count, out tempOutput);
+
+            // Create space for prefixing with the length
+            output = new byte[tempOutput.Length + 4];
+            Array.Copy(tempOutput, 0, output, 4, tempOutput.Length);
+            return tempOutput.Length;
         }
 
         internal static int Decrypt(
@@ -202,7 +227,7 @@ namespace System.Net.Security
         {
             // Sequence number is not used by NetSecurity
             newOffset = offset;
-            return Interop.GssApi.Decrypt(((SafeDeleteNegoContext)securityContext).GssContext, buffer, offset, count);
+            return Interop.NetSecurity.Decrypt(((SafeDeleteNegoContext)securityContext).GssContext, buffer, offset, count);
         }
 
         internal static int DecryptNtlm(
@@ -214,40 +239,40 @@ namespace System.Net.Security
             out int newOffset,
             uint sequenceNumber)
         {
-            throw new PlatformNotSupportedException();
+            throw new NotImplementedException("DecryptNtlm: NTLM is not yet supported");
         }
 
         private static SecurityStatusPal EstablishSecurityContext(
           SafeFreeNegoCredentials credential,
-          ref SafeHandle context,
+          ref SafeDeleteContext context,
+          bool isNtlm,
           string targetName,
           ContextFlagsPal inFlags,
           SecurityBuffer inputBuffer,
           SecurityBuffer outputBuffer,
           ref ContextFlagsPal outFlags)
         {
-            bool isNtlm = credential.IsNTLM;
-            if (isNtlm)
-            {
-                throw new NotImplementedException("EstablishSecurityContext: NTLM is not yet supported");
-            }
+            Debug.Assert(!isNtlm, "EstablishSecurityContext: NTLM is not yet supported");
 
             if (context == null)
             {
                 context = new SafeDeleteNegoContext(credential, targetName);
             }
 
-            SafeDeleteNegoContext gssContext = (SafeDeleteNegoContext)context;
+            SafeDeleteNegoContext negoContext = (SafeDeleteNegoContext)context;
             try
             {
-                SafeGssContextHandle contextHandle = gssContext.GssContext;
-                bool done = Interop.GssApi.EstablishSecurityContext(
+                Interop.NetSecurity.GssFlags inputFlags = GetInteropGssFromContextFlagsPal(inFlags);
+                uint outputFlags;
+                SafeGssContextHandle contextHandle = negoContext.GssContext;
+
+                bool done = Interop.NetSecurity.EstablishSecurityContext(
                                   ref contextHandle,
-                                  credential,
+                                  credential.GssCredential,
                                   isNtlm,
-                                  gssContext.TargetName,
-                                  GetInteropGssFromContextFlagsPal(inFlags),
-                                  inputBuffer.token,
+                                  negoContext.TargetName,
+                                  inputFlags,
+                                  ((inputBuffer != null) ? inputBuffer.token : null),
                                   out outputBuffer.token,
                                   out outputFlags);
 
@@ -258,11 +283,11 @@ namespace System.Net.Security
                 outFlags = GetContextFlagsPalFromInteropGss((Interop.NetSecurity.GssFlags)outputFlags);
 
                 // Save the inner context handle for further calls to NetSecurity
-                if (gssContext.IsInvalid)
+                if (null == negoContext.GssContext)
                 {
-                    gssContext.SetHandle(contextHandle);
+                    negoContext.SetGssContext(contextHandle);
                 }
-                return done ? SecurityStatusPal.OK : SecurityStatusPal.ContinueNeeded;
+                return done ? SecurityStatusPal.CompleteNeeded : SecurityStatusPal.ContinueNeeded;
             }
             catch
             {

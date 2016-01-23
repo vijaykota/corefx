@@ -5,58 +5,33 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
-namespace Microsoft.Win32.SafeHandles
+namespace System.Net.Security
 {
     internal sealed class SafeFreeNegoCredentials : SafeFreeCredentials
     {
-        private readonly SafeGssCredHandle _credential;
-        private bool _isNtlm;
-
-        public bool IsNTLM
-        {
-            get { return _isNtlm;  }
-        }
+        private SafeGssCredHandle _credential;
 
         public SafeGssCredHandle GssCredential
         {
             get { return _credential; }
         }
 
-        public SafeFreeNegoCredentials(bool isNtlm, string username, string password, string domain) : base(IntPtr.Zero, true)
+        public SafeFreeNegoCredentials(string username, string password, string domain) : base(IntPtr.Zero, true)
         {
-            _isNtlm = isNtlm;
-            if (!_isNtlm)
-            {
-                _credential = new SafeGssCredHandle(username, password, domain);
-                if (null != _credential)
-                {
-                    bool ignore = false;
-                    _credential.DangerousAddRef(ref ignore);
-                }
-            }
+            _credential = SafeGssCredHandle.Create(username, password, domain);
         }
 
         public override bool IsInvalid
         {
-            get { return (null == _credential) || _credential.IsInvalid; }
-        }
-
-        public override void Dispose(bool disposing)
-        {
-            if (disposing && (null != _credential))
-            {
-                _credential.Dispose();
-            }
-            base.Dispose(disposing);
+            get { return (null == _credential); }
         }
 
         protected override bool ReleaseHandle()
         {
-            if (null != _credential)
-            {
-                _credential.DangerousRelease();
-            }
+            _credential.Dispose();
+            _credential = null;
             return true;
         }
     }
@@ -79,15 +54,18 @@ namespace Microsoft.Win32.SafeHandles
         public SafeDeleteNegoContext(SafeFreeNegoCredentials credential, string targetName)
             : base(credential)
         {
-            _targetName = new SafeGssNameHandle(targetName, false);
+            try
+            {
+                _targetName = SafeGssNameHandle.Create(targetName, false);
+            }
+            catch
+            {
+                base.ReleaseHandle();
+                throw;
+            }
         }
 
-        public override bool IsInvalid
-        {
-            get { return base.IsInvalid && (null == _context) && (null == _targetName); }
-        }
-
-        public void SetHandle(SafeGssContextHandle context)
+        public void SetGssContext(SafeGssContextHandle context)
         {
             Debug.Assert(!context.IsInvalid, "Invalid context passed to SafeDeleteNegoContext");
             _context = context;
@@ -97,7 +75,7 @@ namespace Microsoft.Win32.SafeHandles
         {
             if (disposing)
             {
-                if (_context != null)
+                if (null != _context)
                 {
                     _context.Dispose();
                     _context = null;
@@ -107,12 +85,11 @@ namespace Microsoft.Win32.SafeHandles
             }
             base.Dispose(disposing);
         }
-
-        protected override bool ReleaseHandle()
-        {
-            return base.ReleaseHandle();
-        }
     }
+}
+
+namespace Microsoft.Win32.SafeHandles
+{
 
     /// <summary>
     /// Wrapper around an output gss_buffer_desc*
