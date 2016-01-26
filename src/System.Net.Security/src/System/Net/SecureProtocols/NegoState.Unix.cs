@@ -24,6 +24,7 @@ namespace System.Net.Security
     internal partial class NegoState
     {
         private const int LogonDenied = unchecked((int) 0x8009030C);
+        private const int NtlmSignatureLength = 16; // Input bytes are preceded by a signature
 
         private class NNSProtocolException : Exception
         {
@@ -64,7 +65,8 @@ namespace System.Net.Security
 
         internal static string QueryContextAuthenticationPackage(SafeDeleteContext securityContext)
         {
-            return NegotiationInfoClass.Kerberos;
+            SafeDeleteNegoContext negoContext = (SafeDeleteNegoContext)securityContext;
+            return negoContext.IsNTLM ? NegotiationInfoClass.NTLM : NegotiationInfoClass.Kerberos;
         }
 
         internal static object QueryContextSizes(SafeDeleteContext securityContext)
@@ -86,30 +88,31 @@ namespace System.Net.Security
 
         internal static SafeFreeCredentials AcquireDefaultCredential(string package, bool isServer)
         {
-           return AcquireCredentialsHandle(package, isServer, new NetworkCredential(string.Empty, string.Empty, string.Empty));
+            return AcquireCredentialsHandle(package, isServer, new NetworkCredential(string.Empty, string.Empty, string.Empty));
         }
 
         internal static SafeFreeCredentials AcquireCredentialsHandle(string package, bool isServer, NetworkCredential credential)
         {
             Debug.Assert(!isServer, "AcquireCredentialsHandle: Server is not yet supported");
+            bool ntlmOnly = string.Equals(package, NegotiationInfoClass.NTLM, StringComparison.OrdinalIgnoreCase);
+            if (ntlmOnly && (string.IsNullOrWhiteSpace(credential.UserName) || string.IsNullOrWhiteSpace(credential.Password)))
+            {
+                // NTLM authentication is not possible with default credentials which are no-op
+                throw new PlatformNotSupportedException();
+            }
+
             SafeFreeCredentials outCredential;
-            if (string.IsNullOrEmpty(credential.UserName))
+            if (string.IsNullOrWhiteSpace(credential.UserName) || string.IsNullOrWhiteSpace(credential.Password))
             {
                 // In client case, equivalent of default credentials is to use previous,
                 // unexpired Kerberos TGT to get service-specific ticket.
-                outCredential = new SafeFreeNegoCredentials(string.Empty, string.Empty, string.Empty);
+                outCredential = new SafeFreeNegoCredentials(false, string.Empty, string.Empty, string.Empty);
             }
             else
             {
-                bool isNtlm = string.Equals(package, NegotiationInfoClass.NTLM);
-                if (isNtlm)
-                {
-                    throw new NotImplementedException("AcquireCredentialsHandle: NTLM is not yet supported");
-                }
-                outCredential = new SafeFreeNegoCredentials(credential.UserName, credential.Password, credential.Domain);
+                outCredential = new SafeFreeNegoCredentials(ntlmOnly, credential.UserName, credential.Password, credential.Domain);
             }
             return outCredential;
-
         }
 
         internal static SecurityStatusPal InitializeSecurityContext(
@@ -130,7 +133,6 @@ namespace System.Net.Security
             return EstablishSecurityContext(
                 (SafeFreeNegoCredentials) credentialsHandle,
                 ref securityContext,
-                false,
                 spn,
                 requestedContextFlags,
                 ((inSecurityBufferArray != null) ? inSecurityBufferArray[0] : null),
@@ -204,15 +206,36 @@ namespace System.Net.Security
             ref byte[] output,
             uint sequenceNumber)
         {
-            Debug.Assert(!isNtlm, "Encrypt: NTLM is not yet supported");
-            SafeDeleteNegoContext gssContext = securityContext as SafeDeleteNegoContext;
-            byte[] tempOutput;
-            Interop.NetSecurity.Encrypt(gssContext.GssContext, isConfidential, buffer, offset, count, out tempOutput);
+            const int prefixLength = sizeof(uint); // Output bytes are preceded by length
+            SafeDeleteNegoContext negoContext = securityContext as SafeDeleteNegoContext;
+            Debug.Assert((isNtlm == negoContext.IsNTLM), "Inconsistent NTLM parameter");
+            if (null != negoContext.GssContext)
+            {
+                byte[] tempOutput;
+                Interop.NetSecurity.Encrypt(negoContext.GssContext, isConfidential, buffer, offset, count, out tempOutput);
 
-            // Create space for prefixing with the length
-            output = new byte[tempOutput.Length + 4];
-            Array.Copy(tempOutput, 0, output, 4, tempOutput.Length);
-            return tempOutput.Length;
+                output = new byte[tempOutput.Length + prefixLength];
+                Array.Copy(tempOutput, 0, output, prefixLength, tempOutput.Length);
+                return tempOutput.Length;
+            }
+            else
+            {
+                byte[] signature = negoContext.MakeSignature(true, buffer, offset, count);
+                if (isConfidential)
+                {
+                    byte[] cipher = negoContext.EncryptOrDecrypt(true, buffer, offset, count);
+                    output = new byte[cipher.Length + signature.Length + prefixLength];
+                    Array.Copy(signature, 0, output, prefixLength, signature.Length);
+                    Array.Copy(cipher, 0, output, signature.Length + prefixLength, cipher.Length);
+                }
+                else
+                {
+                    output = new byte[count + signature.Length + prefixLength];
+                    Array.Copy(signature, 0, output, prefixLength, signature.Length);
+                    Array.Copy(buffer, offset, output, signature.Length + prefixLength, count);
+                }
+                return output.Length;
+            }
         }
 
         internal static int Decrypt(
@@ -225,9 +248,24 @@ namespace System.Net.Security
             out int newOffset,
             uint sequenceNumber)
         {
-            // Sequence number is not used by NetSecurity
-            newOffset = offset;
-            return Interop.NetSecurity.Decrypt(((SafeDeleteNegoContext)securityContext).GssContext, buffer, offset, count);
+            SafeDeleteNegoContext negoContext = (SafeDeleteNegoContext)securityContext;
+            Debug.Assert((isNtlm == negoContext.IsNTLM), "Inconsistent NTLM parameter");
+
+            newOffset = isNtlm ? (offset + NtlmSignatureLength) : offset;    // Account for NTLM signature
+            if (!isConfidential)
+            {
+                return VerifySignature(negoContext, buffer, offset, count);
+            }
+
+            if (null != negoContext.GssContext)
+            {
+                return Interop.NetSecurity.Decrypt(negoContext.GssContext, buffer, offset, count);
+            }
+            else
+            {
+                int tempOffset;
+                return DecryptNtlm(negoContext, buffer, offset, count, isConfidential, out tempOffset, sequenceNumber);
+            }
         }
 
         internal static int DecryptNtlm(
@@ -239,59 +277,124 @@ namespace System.Net.Security
             out int newOffset,
             uint sequenceNumber)
         {
-            throw new NotImplementedException("DecryptNtlm: NTLM is not yet supported");
+            SafeDeleteNegoContext negoContext = (SafeDeleteNegoContext)securityContext;
+            newOffset = offset + NtlmSignatureLength;    // Account for NTLM signature
+            byte[] message = negoContext.EncryptOrDecrypt(false, buffer, newOffset, (count - NtlmSignatureLength));
+            Array.Copy(message, 0, buffer, newOffset, message.Length);
+            return VerifySignature(negoContext, buffer, offset, count);
+        }
+
+        private static int VerifySignature(SafeDeleteNegoContext negoContext, byte[] buffer, int offset, int count)
+        {
+            if (null != negoContext.GssContext)
+            {
+                return Interop.NetSecurity.Decrypt(negoContext.GssContext, buffer, offset, count);
+            }
+            count -= NtlmSignatureLength;
+            byte[] signature = negoContext.MakeSignature(false, buffer, offset + NtlmSignatureLength, count);
+            for (int i = 0; i < signature.Length; i++)
+            {
+                if (buffer[offset + i] != signature[i])
+                {
+                    throw new Exception("Invalid signature");
+                }
+            }
+            return count;
         }
 
         private static SecurityStatusPal EstablishSecurityContext(
           SafeFreeNegoCredentials credential,
           ref SafeDeleteContext context,
-          bool isNtlm,
           string targetName,
           ContextFlagsPal inFlags,
           SecurityBuffer inputBuffer,
           SecurityBuffer outputBuffer,
           ref ContextFlagsPal outFlags)
         {
-            Debug.Assert(!isNtlm, "EstablishSecurityContext: NTLM is not yet supported");
+            bool isNtlm;
+            SafeDeleteNegoContext negoContext;
+            SafeGssContextHandle contextHandle = null;
 
             if (context == null)
             {
-                context = new SafeDeleteNegoContext(credential, targetName);
+                isNtlm = credential.IsNTLM || string.IsNullOrWhiteSpace(targetName);
+                negoContext = isNtlm ? null : new SafeDeleteNegoContext(credential, targetName);
+                context = negoContext;
+            }
+            else
+            {
+                negoContext = (SafeDeleteNegoContext)context;
+                isNtlm = negoContext.IsNTLM;
+                contextHandle = negoContext.GssContext;
             }
 
-            SafeDeleteNegoContext negoContext = (SafeDeleteNegoContext)context;
             try
             {
-                Interop.NetSecurity.GssFlags inputFlags = GetInteropGssFromContextFlagsPal(inFlags);
                 uint outputFlags;
-                SafeGssContextHandle contextHandle = negoContext.GssContext;
+                bool done = false;
 
-                bool done = Interop.NetSecurity.EstablishSecurityContext(
-                                  ref contextHandle,
-                                  credential.GssCredential,
-                                  isNtlm,
-                                  negoContext.TargetName,
-                                  inputFlags,
-                                  ((inputBuffer != null) ? inputBuffer.token : null),
-                                  out outputBuffer.token,
-                                  out outputFlags);
+                if (!isNtlm)
+                {
+                    Interop.NetSecurity.GssFlags inputFlags = GetInteropGssFromContextFlagsPal(inFlags);
+                    try
+                    {
+                        done = Interop.NetSecurity.EstablishSecurityContext(
+                                          ref contextHandle,
+                                          credential.GssCredential,
+                                          false,
+                                          negoContext.TargetName,
+                                          inputFlags,
+                                          ((inputBuffer != null) ? inputBuffer.token : null),
+                                          out outputBuffer.token,
+                                          out outputFlags);
+
+                        outFlags = GetContextFlagsPalFromInteropGss((Interop.NetSecurity.GssFlags)outputFlags);
+
+                        // Save the inner context handle for further calls to NetSecurity
+                        if (null == negoContext.GssContext)
+                        {
+                            negoContext.SetGssContext(contextHandle, false);
+                        }
+                    }
+                    catch
+                    {
+                        // If this is the first attempt at context creation with non-default
+                        // credentials, we need to try NTLM authentication
+                        if ((null != contextHandle) || credential.IsDefault)
+                        {
+                            throw;
+                        }
+                        Console.WriteLine("***** vijayko INIT_SEC FALL BACK ****");
+                        isNtlm = true;
+                        negoContext.Dispose();
+                        context = null;
+                    }
+                }
+
+                if (isNtlm)
+                {
+                    done = EstablishNtlmSecurityContext(
+                                      credential,
+                                      ref context,
+                                      targetName,
+                                      inFlags,
+                                      inputBuffer,
+                                      outputBuffer,
+                                      ref outFlags);
+                }
 
                 Debug.Assert(outputBuffer.token != null, "Unexpected null buffer returned by GssApi");
                 outputBuffer.size = outputBuffer.token.Length;
                 outputBuffer.offset = 0;
 
-                outFlags = GetContextFlagsPalFromInteropGss((Interop.NetSecurity.GssFlags)outputFlags);
-
-                // Save the inner context handle for further calls to NetSecurity
-                if (null == negoContext.GssContext)
-                {
-                    negoContext.SetGssContext(contextHandle);
-                }
-                return done ? SecurityStatusPal.CompleteNeeded : SecurityStatusPal.ContinueNeeded;
+                return done ? 
+                    (isNtlm ? SecurityStatusPal.OK : SecurityStatusPal.CompleteNeeded)
+                    : SecurityStatusPal.ContinueNeeded;
             }
-            catch
+            catch(Exception e)
             {
-                return SecurityStatusPal.InternalError;
+                throw new Exception("***** vijayko BIG EXX: " + e);
+                //return SecurityStatusPal.InternalError;
             }
         }
 

@@ -126,3 +126,21 @@ EvpDes3Cbc
 Direct shim to EVP_des_ede3_cbc.
 */
 extern "C" const EVP_CIPHER* CryptoNative_EvpDes3Cbc();
+
+/*
+Function:
+EvpRc4
+
+Direct shim to EVP_rc4.
+*/
+extern "C" const EVP_CIPHER* CryptoNative_EvpRc4();
+
+/*
+Function:
+EvpCipher
+
+Direct shim to EVP_Cipher.
+*/
+extern "C"
+void CryptoNative_EvpCipher(EVP_CIPHER_CTX* ctx, unsigned char *out, const unsigned char *in, uint32_t inl);
+

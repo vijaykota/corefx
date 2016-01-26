@@ -9,23 +9,42 @@ using Microsoft.Win32.SafeHandles;
 
 namespace System.Net.Security
 {
-    internal sealed class SafeFreeNegoCredentials : SafeFreeCredentials
+    internal sealed partial class SafeFreeNegoCredentials : SafeFreeCredentials
     {
         private SafeGssCredHandle _credential;
+        private readonly string _username;
+        private readonly string _domain;
+        private bool _isNtlm;
+        private bool _isDefault;
 
         public SafeGssCredHandle GssCredential
         {
             get { return _credential; }
         }
 
-        public SafeFreeNegoCredentials(string username, string password, string domain) : base(IntPtr.Zero, true)
-        {
-            _credential = SafeGssCredHandle.Create(username, password, domain);
-        }
-
         public override bool IsInvalid
         {
             get { return (null == _credential); }
+        }
+
+        public string UserName
+        {
+            get { return _username; }
+        }
+
+        public string Domain
+        {
+            get { return _domain; }
+        }
+
+        public bool IsNTLM
+        {
+            get { return _isNtlm; }
+        }
+
+        public bool IsDefault
+        {
+            get { return _isDefault; }
         }
 
         protected override bool ReleaseHandle()
@@ -36,10 +55,11 @@ namespace System.Net.Security
         }
     }
 
-    internal sealed class SafeDeleteNegoContext : SafeDeleteContext
+    internal sealed partial class SafeDeleteNegoContext : SafeDeleteContext
     {
         private SafeGssNameHandle _targetName;
         private SafeGssContextHandle _context;
+        private bool _isNtlm;
 
         public SafeGssNameHandle TargetName
         {
@@ -49,6 +69,11 @@ namespace System.Net.Security
         public SafeGssContextHandle GssContext
         {
             get { return _context; }
+        }
+
+        public bool IsNTLM
+        {
+            get { return _isNtlm; }
         }
 
         public SafeDeleteNegoContext(SafeFreeNegoCredentials credential, string targetName)
@@ -65,10 +90,11 @@ namespace System.Net.Security
             }
         }
 
-        public void SetGssContext(SafeGssContextHandle context)
+        public void SetGssContext(SafeGssContextHandle context, bool isNtlm)
         {
             Debug.Assert(!context.IsInvalid, "Invalid context passed to SafeDeleteNegoContext");
             _context = context;
+            _isNtlm = isNtlm;
         }
 
         protected override void Dispose(bool disposing)
@@ -80,8 +106,11 @@ namespace System.Net.Security
                     _context.Dispose();
                     _context = null;
                 }
-                _targetName.Dispose();
-                _targetName = null;
+                if (null != _targetName)
+                {
+                    _targetName.Dispose();
+                    _targetName = null;
+                }
             }
             base.Dispose(disposing);
         }

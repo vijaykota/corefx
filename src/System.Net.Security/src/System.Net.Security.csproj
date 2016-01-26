@@ -335,6 +335,55 @@
     </Compile>
   </ItemGroup>
   
+  <ItemGroup Condition=" '$(TargetsLinux)' == 'true' ">
+    <!-- NegotiateStream -->    
+    <Compile Include="System\Net\SecureProtocols\NegoState.Linux.cs" />
+
+    <!-- Interop -->
+    <Compile Include="$(CommonPath)\Interop\Linux\System.Net.Security.Native\SecuritySafeHandles.cs"> 
+      <Link>Common\Interop\Linux\System.Net.Security.Native\SecuritySafeHandles.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Linux\System.Net.Security.Native\Interop.HeimdalNtlm.cs">
+      <Link>Common\Interop\Linux\System.Net.Security.Native\Interop.HeimdalNtlm.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Linux\System.Net.Security.Native\Interop.HeimdalNtlmException.cs"> 
+      <Link>Common\Interop\Linux\System.Net.Security.Native\Interop.HeimdalNtlmException.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Linux\System.Net.Security.Native\Interop.Ntlm.cs"> 
+      <Link>Common\Interop\Linux\System.Net.Security.Native\Interop.Ntlm.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Linux\System.Net.Security.Native\NtlmSecuritySafeHandles.cs"> 
+      <Link>Common\Interop\Linux\System.Net.Security.Native\NtlmSecuritySafeHandles.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Unix\System.Security.Cryptography.Native\Interop.Hmac.cs">
+      <Link>Common\Interop\Unix\System.Security.Cryptography.Native\Interop.Hmac.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\System.Security.Cryptography.Native\Interop.EVP.cs">
+      <Link>Common\Interop\Unix\System.Security.Cryptography.Native\Interop.EVP.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafeEvpMdCtxHandle.Unix.cs">
+      <Link>Microsoft\Win32\SafeHandles\SafeEvpMdCtxHandle.Unix.cs</Link>
+    </Compile>
+     <Compile Include="$(CommonPath)\Interop\Unix\System.Security.Cryptography.Native\Interop.EVP.Cipher.cs">
+      <Link>Common\Interop\Unix\System.Security.Cryptography.Native\Interop.EVP.Cipher.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafeEvpCipherCtxHandle.Unix.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\SafeEvpCipherCtxHandle.Unix.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\SafeHmacCtxHandle.Unix.cs">
+      <Link>Common\Microsoft\Win32\SafeHandles\SafeHmacCtxHandle.Unix.cs</Link>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup Condition=" '$(TargetsOSX)' == 'true' ">
+    <!-- NegotiateStream -->    
+    <Compile Include="System\Net\SecureProtocols\NegoState.OSX.cs" />
+
+    <!-- Interop -->
+    <Compile Include="$(CommonPath)\Interop\OSX\System.Net.Security.Native\SecuritySafeHandles.cs"> 
+      <Link>Common\Interop\OSX\System.Net.Security.Native\SecuritySafeHandles.cs</Link> 
+    </Compile> 
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="project.json" />
   </ItemGroup>

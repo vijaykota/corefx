@@ -103,7 +103,7 @@ extern "C" uint32_t NetSecurity_ReleaseBuffer(uint32_t* minor_status, gss_buffer
 }
 
 
-extern "C" void NetSecurity_CopyBuffer(gss_buffer_t bufferHandle, uint8_t *bytes, uint32_t offset)
+extern "C" void NetSecurity_CopyBuffer(gss_buffer_t bufferHandle, uint8_t *bytes, int32_t offset)
 {
     memcpy(bytes + offset, bufferHandle->value, bufferHandle->length);
 }
