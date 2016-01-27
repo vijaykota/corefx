@@ -431,5 +431,7 @@
   </data>
   <data name="net_context_buffer_too_small" xml:space="preserve">
     <value>Insufficient buffer space. Required: {0} Actual: {1}.</value>
+  <data name="net_generic_heimntlm_operation_failed" xml:space="preserve">
+    <value>Heimntlm operation failed with status: {0})</value>
   </data>
 </root>
