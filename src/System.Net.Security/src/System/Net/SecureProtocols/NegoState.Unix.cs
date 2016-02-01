@@ -338,6 +338,10 @@ namespace System.Net.Security
                     Interop.NetSecurity.GssFlags inputFlags = GetInteropGssFromContextFlagsPal(inFlags);
                     try
                     {
+                        Console.WriteLine("**** vijayko ISC PARAMS:\n cred: {0} target: {1} flags: {2}",
+                            credential.GssCredential.DangerousGetHandle().ToString("x8"),
+                            negoContext.TargetName.DangerousGetHandle().ToString("x8"), inputFlags);
+                        if (null != contextHandle)Console.WriteLine("**** ISC contexthandle: {0}", contextHandle.DangerousGetHandle().ToString("x8"));
                         done = Interop.NetSecurity.EstablishSecurityContext(
                                           ref contextHandle,
                                           credential.GssCredential,
@@ -353,10 +357,11 @@ namespace System.Net.Security
                         // Save the inner context handle for further calls to NetSecurity
                         if (null == negoContext.GssContext)
                         {
+                            Console.WriteLine("**** ISC contexthandle: {0}", contextHandle.DangerousGetHandle().ToString("x8"));
                             negoContext.SetGssContext(contextHandle, false);
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // If this is the first attempt at context creation with non-default
                         // credentials, we need to try NTLM authentication
@@ -364,7 +369,7 @@ namespace System.Net.Security
                         {
                             throw;
                         }
-                        Console.WriteLine("***** vijayko INIT_SEC FALL BACK ****");
+                        Console.WriteLine("***** vijayko INIT_SEC FALL BACK: \n {0} ****", ex);
                         isNtlm = true;
                         negoContext.Dispose();
                         context = null;

@@ -151,7 +151,7 @@ namespace System.Net.Security
 #endif
                 _negoState.ValidateCreateContext(_package, credential, string.Empty, policy, requiredProtectionLevel, requiredImpersonationLevel);
 
-                LazyAsyncResult result = new LazyAsyncResult(_negoState, asyncState, asyncCallback);
+            LazyAsyncResult result = null; //vijayko  new LazyAsyncResult(_negoState, asyncState, asyncCallback);
                 _negoState.ProcessAuthentication(result);
 
                 return result;
@@ -207,7 +207,8 @@ namespace System.Net.Security
 
         public virtual Task AuthenticateAsServerAsync()
         {
-            return Task.Factory.FromAsync(BeginAuthenticateAsServer, EndAuthenticateAsServer, null);
+            //vijayko return Task.Factory.FromAsync(BeginAuthenticateAsServer, EndAuthenticateAsServer, null);
+            return Task.Run(() => BeginAuthenticateAsServer(null, null));
         }
 
         public virtual Task AuthenticateAsServerAsync(ExtendedProtectionPolicy policy)
@@ -217,7 +218,8 @@ namespace System.Net.Security
 
         public virtual Task AuthenticateAsServerAsync(NetworkCredential credential, ProtectionLevel requiredProtectionLevel, TokenImpersonationLevel requiredImpersonationLevel)
         {
-            return Task.Factory.FromAsync(BeginAuthenticateAsServer, EndAuthenticateAsServer, credential, requiredProtectionLevel, requiredImpersonationLevel, null);
+            //vijayko return Task.Factory.FromAsync(BeginAuthenticateAsServer, EndAuthenticateAsServer, credential, requiredProtectionLevel, requiredImpersonationLevel, null);
+            return Task.Run(() => BeginAuthenticateAsServer(credential, requiredProtectionLevel, requiredImpersonationLevel, null, null));
         }
 
         public virtual Task AuthenticateAsServerAsync(
