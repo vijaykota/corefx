@@ -431,18 +431,6 @@ namespace System.Net
             // The return value will tell us correctly if the handshake is over or not
             if (statusCode == SecurityStatusPal.OK)
             {
-                // Success.
-                if (statusCode != SecurityStatusPal.OK)
-                {
-                    if (GlobalLog.IsEnabled)
-                    {
-                        GlobalLog.AssertFormat("NTAuthentication#{0}::GetOutgoingBlob()|statusCode:[0x{1:x8}] ({2}) m_SecurityContext#{3}::Handle:[{4}] [STATUS != OK]", LoggingHash.HashString(this), (int)statusCode, statusCode, LoggingHash.HashString(_securityContext), LoggingHash.ObjectToString(_securityContext));
-                    }
-
-                    Debug.Fail("NTAuthentication#" + LoggingHash.HashString(this) + "::GetOutgoingBlob()|statusCode:[0x" + ((int)statusCode).ToString("x8") + "] (" + statusCode + ") m_SecurityContext#" + LoggingHash.HashString(_securityContext) + "::Handle:[" + LoggingHash.ObjectToString(_securityContext) + "] [STATUS != OK]");
-                }
-
-                Debug.Fail("NTAuthentication#" + LoggingHash.HashString(this) + "::GetOutgoingBlob()|statusCode:[0x" + ((int)statusCode).ToString("x8") + "] (" + statusCode + ") m_SecurityContext#" + LoggingHash.HashString(_securityContext) + "::Handle:[" + LoggingHash.ObjectToString(_securityContext) + "] [STATUS != OK]");
                 _isCompleted = true;
             }
             else if (GlobalLog.IsEnabled)
