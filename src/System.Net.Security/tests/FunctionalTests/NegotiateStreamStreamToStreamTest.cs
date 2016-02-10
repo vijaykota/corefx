@@ -15,6 +15,13 @@ namespace System.Net.Security.Tests
     {
         private readonly byte[] _sampleMsg = Encoding.UTF8.GetBytes("Sample Test Message");
 
+        // TODO: MOve to TestConfiguration class
+        private const string Realm = "vijayko-ubuntu.realm";
+        private const string KerberosUser = "vijayko@" + Realm;
+        private const string Password = "111_aaa";
+        private const string HostTarget = "gss/localhost@" + Realm;
+        private const string HttpTarget = "HTTP@" + Realm;
+
         [ActiveIssue(5284, PlatformID.Windows)]
         [Fact]
         [PlatformSpecific(PlatformID.Windows)]
@@ -260,7 +267,96 @@ namespace System.Net.Security.Tests
                 Assert.True(_sampleMsg.SequenceEqual(recvBuf));
             }
         }
-        
+
+        [Fact]
+        [OuterLoop]
+        [PlatformSpecific(PlatformID.Linux | PlatformID.OSX)]
+        public void NegotiateStream_StreamToStream_KerberosAuthentication_Success()
+        {
+            if (!UnixGssFakeNegotiateStream.CheckAndInitializeKerberos())
+            {
+                return;
+            }
+
+            MockNetwork network = new MockNetwork();
+
+            using (var clientStream = new FakeNetworkStream(false, network))
+            using (var serverStream = new FakeNetworkStream(true, network))
+            using (var client = new UnixGssFakeNegotiateStream(clientStream))
+            using (var server = new UnixGssFakeNegotiateStream(serverStream))
+            {
+                Assert.False(client.IsAuthenticated);
+
+                Task[] auth = new Task[2];
+                NetworkCredential credential = new NetworkCredential(KerberosUser, Password);
+                auth[0] = client.AuthenticateAsClientAsync(credential, HostTarget);
+                auth[1] = server.AuthenticateAsServerAsync();
+
+                bool finished = Task.WaitAll(auth, TestConfiguration.PassingTestTimeoutMilliseconds);
+                Assert.True(finished, "Handshake completed in the allotted time");
+
+                // Expected Client property values:
+                Assert.True(client.IsAuthenticated);
+                Assert.Equal(TokenImpersonationLevel.Identification, client.ImpersonationLevel);
+                Assert.Equal(true, client.IsEncrypted);
+                Assert.Equal(true, client.IsMutuallyAuthenticated);
+                Assert.Equal(false, client.IsServer);
+                Assert.Equal(true, client.IsSigned);
+                Assert.Equal(false, client.LeaveInnerStreamOpen);
+
+                IIdentity serverIdentity = client.RemoteIdentity;
+                Assert.Equal("Kerberos", serverIdentity.AuthenticationType);
+                // TODO: File issue on GenericIdentity. Returns true on Linux
+                //Assert.Equal(false, serverIdentity.IsAuthenticated);
+                Assert.Equal(HostTarget, serverIdentity.Name);
+            }
+        }
+
+
+        [Fact]
+        [OuterLoop]
+        [PlatformSpecific(PlatformID.Linux | PlatformID.OSX)]
+        public void NegotiateStream_StreamToStream_AuthToHttpTarget_Success()
+        {
+            if (!UnixGssFakeNegotiateStream.CheckAndInitializeKerberos())
+            {
+                return;
+            }
+
+            MockNetwork network = new MockNetwork();
+
+            using (var clientStream = new FakeNetworkStream(false, network))
+            using (var serverStream = new FakeNetworkStream(true, network))
+            using (var client = new UnixGssFakeNegotiateStream(clientStream))
+            using (var server = new UnixGssFakeNegotiateStream(serverStream))
+            {
+                Assert.False(client.IsAuthenticated);
+
+                Task[] auth = new Task[2];
+                NetworkCredential credential = new NetworkCredential(KerberosUser, Password);
+                auth[0] = client.AuthenticateAsClientAsync(credential, HttpTarget);
+                auth[1] = server.AuthenticateAsServerAsync();
+
+                bool finished = Task.WaitAll(auth, TestConfiguration.PassingTestTimeoutMilliseconds);
+                Assert.True(finished, "Handshake completed in the allotted time");
+
+                // Expected Client property values:
+                Assert.True(client.IsAuthenticated);
+                Assert.Equal(TokenImpersonationLevel.Identification, client.ImpersonationLevel);
+                Assert.Equal(true, client.IsEncrypted);
+                Assert.Equal(true, client.IsMutuallyAuthenticated);
+                Assert.Equal(false, client.IsServer);
+                Assert.Equal(true, client.IsSigned);
+                Assert.Equal(false, client.LeaveInnerStreamOpen);
+
+                IIdentity serverIdentity = client.RemoteIdentity;
+                Assert.Equal("Kerberos", serverIdentity.AuthenticationType);
+                // TODO: File issue on GenericIdentity. Returns true on Linux
+                //Assert.Equal(false, serverIdentity.IsAuthenticated);
+                Assert.Equal(HttpTarget, serverIdentity.Name);
+            }
+        }
+
         [Fact]
         [PlatformSpecific(PlatformID.Linux | PlatformID.OSX)]
         public void NegotiateStream_Ctor_Throws()

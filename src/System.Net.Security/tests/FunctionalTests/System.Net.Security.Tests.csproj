@@ -8,6 +8,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{A55A2B9A-830F-4330-A0E7-02A9FB30ABD2}</ProjectGuid>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Library</OutputType>
   </PropertyGroup>
   
@@ -83,6 +84,22 @@
   
   <ItemGroup Condition=" '$(TargetsUnix)' == 'true' ">
     <Compile Include="IdentityValidator.Unix.cs" />
+    <Compile Include="UnixGssFakeNegotiateStream.cs" />
+    <Compile Include="$(CommonPath)\Interop\Unix\Interop.Libraries.cs">
+      <Link>Common\Interop\Unix\Interop.Libraries.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Interop\Unix\System.Net.Security.Native\Interop.GssApiException.cs"> 
+      <Link>Common\Interop\Unix\System.Net.Security.Native\Interop.GssApiException.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Unix\System.Net.Security.Native\Interop.GssBuffer.cs">
+      <Link>Common\Interop\Unix\System.Net.Security.Native\Interop.GssBuffer.cs</Link>
+    </Compile>
+    <Compile Include="$(CommonPath)\Microsoft\Win32\SafeHandles\GssSafeHandles.cs"> 
+       <Link>Common\Microsoft\Win32\SafeHandles\GssSafeHandles.cs</Link> 
+    </Compile> 
+    <Compile Include="$(CommonPath)\Interop\Unix\System.Net.Security.Native\Interop.NetSecurityNative.cs"> 
+      <Link>Common\Interop\Unix\System.Net.Security.Native\Interop.NetSecurityNative.cs</Link> 
+    </Compile>
   </ItemGroup>
   
   <ItemGroup>

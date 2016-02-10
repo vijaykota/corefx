@@ -81,7 +81,9 @@ namespace System.Net.Security.Tests
         public override int Read(byte[] buffer, int offset, int count)
         {
             UpdateReadStream();
-            return _readStream.Read(buffer, offset, count);
+            var ret = _readStream.Read(buffer, offset, count);
+            Console.WriteLine("{0} read: {1}", (_isServer ? "SERVER" : "CLIENT"), ret);
+            return ret;
         }
 
         public override void Write(byte[] buffer, int offset, int count)
@@ -90,6 +92,7 @@ namespace System.Net.Security.Tests
 
             Buffer.BlockCopy(buffer, offset, innerBuffer, 0, count);
             _network.WriteFrame(_isServer, innerBuffer);
+            Console.WriteLine("{0} wrote: {1}", (_isServer ? "SERVER" : "CLIENT"), count);
         }
 
         private void UpdateReadStream()
