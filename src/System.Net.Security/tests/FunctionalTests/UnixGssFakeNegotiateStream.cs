@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Security.Authentication;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 
@@ -10,6 +11,7 @@ namespace System.Net.Security.Tests
     {
         private readonly Stream _innerStream;
         private readonly byte[] _header = new byte[5];
+        private static readonly byte[] ErrorBuffer = new byte[] { 0, 0, 0, 0, 0x80, 0x09, 0x03, 0x0C }; // return LOGON_DENIED
 
         public UnixGssFakeStreamFramer(Stream innerStream)
         {
@@ -18,16 +20,17 @@ namespace System.Net.Security.Tests
 
         public void WriteFrame(byte[] buffer, int offset, int count)
         {
-            _header[0] = 20; // TODO: Define consts for these 3 fields
-            _header[1] = (byte)1; // major version
-            _header[2] = (byte)0; // minor version
-            _header[3] = (byte)((count >> 8) & 0xff);
-            _header[4] = (byte)(count & 0xff);
-            _innerStream.Write(_header, 0, _header.Length);
+            WriteFrameHeader(count, isError:false);
             if (count > 0)
             {
                 _innerStream.Write(buffer, offset, count);
             }
+        }
+
+        public void WriteFrame(Interop.NetSecurityNative.GssApiException e)
+        {
+            WriteFrameHeader(ErrorBuffer.Length, isError:true);
+            _innerStream.Write(ErrorBuffer, 0, ErrorBuffer.Length);
         }
 
         public byte[] ReadFrame()
@@ -36,6 +39,16 @@ namespace System.Net.Security.Tests
             byte[] inBuf = new byte[(_header[3] << 8) + _header[4]];
             _innerStream.Read(inBuf, 0, inBuf.Length);
             return inBuf;
+        }
+
+        private void WriteFrameHeader(int count, bool isError)
+        {
+            _header[0] = isError ? (byte)21 : (byte)20; // TODO: Define consts for these 3 fields
+            _header[1] = (byte)1; // major version
+            _header[2] = (byte)0; // minor version
+            _header[3] = (byte)((count >> 8) & 0xff);
+            _header[4] = (byte)(count & 0xff);
+            _innerStream.Write(_header, 0, _header.Length);
         }
     }
 
@@ -57,14 +70,19 @@ namespace System.Net.Security.Tests
             _framer = new UnixGssFakeStreamFramer(innerStream);
         }
 
-        public override Task AuthenticateAsClientAsync(NetworkCredential credential, string targetName)
-        {
-            return base.AuthenticateAsClientAsync(credential, targetName);
-        }
-
         public override Task AuthenticateAsServerAsync()
         {
             return Task.Factory.StartNew(s_serverLoop, (object)this);
+        }
+
+        public static void GetDefaultKerberosCredentials(string username, string password)
+        {
+            // Fetch a Kerberos TGT which gets saved in the default cache
+            using (SafeGssCredHandle cred = SafeGssCredHandle.Create(username, password, string.Empty))
+            {
+                return;
+            }
+
         }
 
         private static void ServerLoop(object state)
@@ -76,8 +94,16 @@ namespace System.Net.Security.Tests
             {
                 byte[] inBuf = thisRef._framer.ReadFrame();
                 byte[] outBuf = null;
-                done = EstablishSecurityContext(ref thisRef._context, inBuf, out outBuf);
-                thisRef._framer.WriteFrame(outBuf, 0, outBuf.Length);
+                try
+                {
+                    done = EstablishSecurityContext(ref thisRef._context, inBuf, out outBuf);
+                    thisRef._framer.WriteFrame(outBuf, 0, outBuf.Length);
+                }
+                catch (Interop.NetSecurityNative.GssApiException e)
+                {
+                    thisRef._framer.WriteFrame(e);
+                    done = true;
+                }
             }
             while (!done);
         }

@@ -20,9 +20,12 @@ namespace System.Net.Security
 
         public SafeFreeNegoCredentials(string username, string password, string domain) : base(IntPtr.Zero, true)
         {
-            bool ignore = false;
-            _credential = SafeGssCredHandle.Create(username, password, domain);
-            _credential.DangerousAddRef(ref ignore);
+            if (!string.IsNullOrEmpty(username))
+            {
+                bool ignore = false;
+                _credential = SafeGssCredHandle.Create(username, password, domain);
+                _credential.DangerousAddRef(ref ignore);
+            }
         }
 
         public override bool IsInvalid
@@ -32,8 +35,11 @@ namespace System.Net.Security
 
         protected override bool ReleaseHandle()
         {
-            _credential.DangerousRelease();
-            _credential = null;
+            if (null != _credential)
+            {
+                _credential.DangerousRelease();
+                _credential = null;
+            }
             return true;
         }
     }
