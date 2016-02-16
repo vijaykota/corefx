@@ -30,7 +30,7 @@ internal static partial class Interop
                 Debug.Assert(count >= 0 , " count must be a valid value");
                 Debug.Assert(type2Data.Length >= offset + count, " count and offset must match the given buffer");
 
-                int status = Interop.NetSecurityNative.HeimNtlmDecodeType2(type2Data, offset, count, out _type2Handle);
+                int status = Interop.NetSecurityNative.NtlmDecodeType2(type2Data, offset, count, out _type2Handle);
                 Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
             }
 
@@ -41,31 +41,14 @@ internal static partial class Interop
                 Debug.Assert(password != null, "password cannot be null");
                 Debug.Assert(domain != null,  "domain cannot be null");
 
-                // reference for NTLM response: https://msdn.microsoft.com/en-us/library/cc236700.aspx
-
                 sessionKey = null;
-                Interop.NetSecurityNative.NtlmBuffer key = default(Interop.NetSecurityNative.NtlmBuffer);
-                Interop.NetSecurityNative.NtlmBuffer lmResponse = default(Interop.NetSecurityNative.NtlmBuffer);
-                Interop.NetSecurityNative.NtlmBuffer ntResponse = default(Interop.NetSecurityNative.NtlmBuffer);
                 Interop.NetSecurityNative.NtlmBuffer sessionKeyBuffer = default(Interop.NetSecurityNative.NtlmBuffer);
                 Interop.NetSecurityNative.NtlmBuffer outputData = default(Interop.NetSecurityNative.NtlmBuffer);
 
                 try
                 {
-                    int status = Interop.NetSecurityNative.HeimNtlmNtKey(password, ref key);
-                    Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
-
-                    byte[] baseSessionKey = new byte[Interop.NetSecurityNative.MD5DigestLength];
-                    status = Interop.NetSecurityNative.HeimNtlmCalculateResponse(true, ref key, _type2Handle, username, domain,
-                             baseSessionKey, baseSessionKey.Length, ref lmResponse);
-                    Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
-
-                    status = Interop.NetSecurityNative.HeimNtlmCalculateResponse(false, ref key, _type2Handle, username, domain,
-                                                                           baseSessionKey, baseSessionKey.Length, ref ntResponse);
-                    Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
-
-                    status = Interop.NetSecurityNative.CreateType3Message(ref key, _type2Handle, username, domain, flags,
-                        ref lmResponse, ref ntResponse, baseSessionKey,baseSessionKey.Length, ref sessionKeyBuffer, ref outputData);
+                    status = Interop.NetSecurityNative.CreateType3Message(password, _type2Handle, username, domain, flags,
+                        ref sessionKeyBuffer, ref outputData);
                     Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
 
                     sessionKey = sessionKeyBuffer.ToByteArray();
@@ -73,9 +56,6 @@ internal static partial class Interop
                 }
                 finally
                 {
-                    key.Dispose();
-                    lmResponse.Dispose();
-                    ntResponse.Dispose();
                     sessionKeyBuffer.Dispose();
                     outputData.Dispose();
                 }

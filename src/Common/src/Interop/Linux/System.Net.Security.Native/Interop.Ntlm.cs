@@ -20,40 +20,22 @@ internal static partial class Interop
         [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_ReleaseNtlmBuffer")]
         internal static extern int ReleaseNtlmBuffer(IntPtr bufferPtr, UInt64 length);
 
-        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_HeimNtlmEncodeType1")]
-        internal static extern int HeimNtlmEncodeType1(uint flags, ref NtlmBuffer buffer);
+        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_NtlmEncodeType1")]
+        internal static extern int NtlmEncodeType1(uint flags, ref NtlmBuffer buffer);
 
-        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_HeimNtlmDecodeType2")]
-        internal static extern int HeimNtlmDecodeType2(byte[] data, int offset, int count, out SafeNtlmType2Handle type2Handle);
+        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_NtlmDecodeType2")]
+        internal static extern int NtlmDecodeType2(byte[] data, int offset, int count, out SafeNtlmType2Handle type2Handle);
 
-        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_HeimNtlmFreeType2")]
-        internal static extern int HeimNtlmFreeType2(IntPtr type2Handle);
-
-        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_HeimNtlmNtKey", CharSet = CharSet.Ansi)]
-        internal static extern int HeimNtlmNtKey(string password, ref NtlmBuffer key);
-
-        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_HeimNtlmCalculateResponse", CharSet = CharSet.Ansi)]
-        internal static extern int HeimNtlmCalculateResponse(
-            bool isLM,
-            ref NtlmBuffer key,
-            SafeNtlmType2Handle type2Handle,
-            string username,
-            string target,
-            byte[] baseSessionKey,
-            int baseSessionKeyLen,
-            ref NtlmBuffer answer);
+        [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_NtlmFreeType2")]
+        internal static extern int NtlmFreeType2(IntPtr type2Handle);
 
         [DllImport(Interop.Libraries.NetSecurityNative, EntryPoint="NetSecurityNative_CreateType3Message", CharSet = CharSet.Ansi)]
         internal static extern int CreateType3Message(
-            ref NtlmBuffer key,
+            string password,
             SafeNtlmType2Handle type2Handle,
             string username,
             string domain,
             uint flags,
-            ref NtlmBuffer lmResponse,
-            ref NtlmBuffer ntlmResponse,
-            byte [] baseSessionKey,
-            int baseSessionKeyLen,
             ref NtlmBuffer sessionKey,
             ref NtlmBuffer data);
 
