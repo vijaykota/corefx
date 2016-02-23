@@ -24,6 +24,21 @@ struct PAL_NtlmBuffer
 };
 struct ntlm_type2;
 
+typedef struct gss_ctx_id_t_desc_struct GssCtxId;
+typedef struct gss_buffer_desc_struct GssBuffer;
+
+enum PAL_GssStatus : uint32_t
+{
+    PAL_GSS_COMPLETE = 0,
+    PAL_GSS_CONTINUE_NEEDED = 1
+};
+
+struct PAL_GssBuffer
+{
+    uint64_t length;
+    uint8_t* data;
+};
+
 /*
 Shims heim_ntlm_free_buf method.
 */
@@ -55,3 +70,43 @@ extern "C" int32_t NetSecurityNative_CreateType3Message(const char* password,
                                                         uint32_t flags,
                                                         struct PAL_NtlmBuffer* outSessionKey,
                                                         struct PAL_NtlmBuffer* outBufferHandle);
+
+/*
+Shims the gss_release_buffer
+*/
+extern "C" void NetSecurityNative_ReleaseGssBuffer(void* buffer, uint64_t length);
+
+/*
+Shims the gss_accept_sec_context method
+*/
+extern "C" uint32_t NetSecurityNative_AcceptSecContext(uint32_t* minorStatus,
+                                                     GssCtxId** contextHandle,
+                                                     uint8_t* inputBytes,
+                                                     uint32_t inputLength,
+                                                     struct PAL_GssBuffer* outBuffer);
+
+/*
+Shims the gss_delete_sec_context method.
+*/
+extern "C" uint32_t NetSecurityNative_DeleteSecContext(uint32_t* minorStatus, GssCtxId** contextHandle);
+
+/*
+Shims the gss_wrap method.
+*/
+extern "C" uint32_t NetSecurityNative_Wrap(uint32_t* minorStatus,
+                                           GssCtxId* contextHandle,
+                                           int32_t isEncrypt,
+                                           uint8_t* inputBytes,
+                                           int32_t offset,
+                                           int32_t count,
+                                           struct PAL_GssBuffer* outBuffer);
+
+/*
+Shims the gss_unwrap method.
+*/
+extern "C" uint32_t NetSecurityNative_Unwrap(uint32_t* minorStatus,
+                                             GssCtxId* contextHandle,
+                                             uint8_t* inputBytes,
+                                             int32_t offset,
+                                             int32_t count,
+                                             struct PAL_GssBuffer* outBuffer);

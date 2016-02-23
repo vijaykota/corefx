@@ -140,7 +140,7 @@ internal static partial class Interop
             NetSecurityNative.NtlmBuffer buffer = default(NetSecurityNative.NtlmBuffer);
             try
             {
-                int status = NetSecurityNative.HeimNtlmEncodeType1(flags, ref buffer);
+                int status = NetSecurityNative.NtlmEncodeType1(flags, ref buffer);
                 NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
                 return buffer.ToByteArray();
             }

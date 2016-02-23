@@ -14,6 +14,7 @@
 #include "heimntlm.h"
 #include "openssl/hmac.h"
 #include "openssl/evp.h"
+#include <gssapi.h>
 
 static_assert(PAL_NTLMSSP_NEGOTIATE_UNICODE == NTLM_NEG_UNICODE, "");
 static_assert(PAL_NTLMSSP_REQUEST_TARGET == NTLM_NEG_TARGET, "");
@@ -306,4 +307,125 @@ extern "C" int32_t NetSecurityNative_CreateType3Message(const char* password,
     }
 
     return NetSecurityNative_SetBufferLength(status, &ntlmBuffer, outBuffer);
+}
+
+static uint32_t NetSecurityNative_HandleError(uint32_t majorStatus,
+                                              gss_buffer_t gssBuffer,
+                                              struct PAL_GssBuffer *targetBuffer)
+{
+    assert(targetBuffer != nullptr);
+    assert(gssBuffer != nullptr);
+    if (GSS_ERROR(majorStatus))
+    {
+        assert (gssBuffer->value == nullptr);
+        targetBuffer->length = 0;
+        targetBuffer->data = nullptr;
+    }
+    else
+    {
+        assert(gssBuffer->value != nullptr || gssBuffer->length == 0);
+        targetBuffer->length = gssBuffer->length;
+        targetBuffer->data = static_cast<uint8_t*>(gssBuffer->value);
+    }
+
+    return majorStatus;
+}
+
+extern "C" uint32_t NetSecurityNative_DeleteSecContext(uint32_t* minorStatus, GssCtxId** contextHandle)
+{
+    assert(minorStatus != nullptr);
+    assert(contextHandle != nullptr);
+
+    return gss_delete_sec_context(minorStatus, contextHandle, GSS_C_NO_BUFFER);
+}
+
+extern "C" uint32_t NetSecurityNative_AcceptSecContext(uint32_t* minorStatus,
+                                                     GssCtxId** contextHandle,
+                                                     uint8_t* inputBytes,
+                                                     uint32_t inputLength,
+                                                     struct PAL_GssBuffer* outBuffer)
+{
+    assert(minorStatus != nullptr);
+    assert(contextHandle != nullptr);
+    assert(outBuffer != nullptr);
+    assert(inputBytes  != nullptr || inputLength == 0);
+
+
+    GssBuffer inputToken {.length = UnsignedCast(inputLength), .value = inputBytes};
+    GssBuffer gssBuffer { .length = 0, .value = nullptr };
+
+    uint32_t majorStatus = gss_accept_sec_context(minorStatus,
+                                                contextHandle,
+                                                GSS_C_NO_CREDENTIAL,
+                                                &inputToken,
+                                                GSS_C_NO_CHANNEL_BINDINGS,
+                                                nullptr,
+                                                nullptr,
+                                                &gssBuffer,
+                                                0,
+                                                nullptr,
+                                                nullptr);
+    printf("ACCEPT stat=%x min=%x len=%zu val=%p\n", majorStatus, *minorStatus, gssBuffer.length, gssBuffer.value);
+
+    majorStatus = NetSecurityNative_HandleError(majorStatus, &gssBuffer, outBuffer);
+    return majorStatus;
+}
+
+extern "C" void NetSecurityNative_ReleaseGssBuffer(void* buffer, uint64_t length)
+{
+    assert(buffer != nullptr);
+
+    uint32_t minorStatus;
+    GssBuffer gssBuffer {.length = length, .value = buffer};
+    gss_release_buffer(&minorStatus, &gssBuffer);
+}
+
+extern "C" uint32_t NetSecurityNative_Wrap(uint32_t* minorStatus,
+                                           GssCtxId* contextHandle,
+                                           int32_t isEncrypt,
+                                           uint8_t* inputBytes,
+                                           int32_t offset,
+                                           int32_t count,
+                                           struct PAL_GssBuffer* outBuffer)
+{
+    assert(minorStatus != nullptr);
+    assert(contextHandle != nullptr);
+    assert(isEncrypt == 1 || isEncrypt == 0);
+    assert(inputBytes != nullptr);
+    assert(offset >= 0);
+    assert(count >= 0);
+    assert(outBuffer != nullptr);
+    // count refers to the length of the input message. That is, number of bytes of inputBytes
+    // starting at offset
+    // that need to be wrapped.
+
+    int confState;
+    GssBuffer inputMessageBuffer{.length = UnsignedCast(count), .value = inputBytes + offset};
+    GssBuffer gssBuffer;
+    uint32_t majorStatus = gss_wrap(
+        minorStatus, contextHandle, isEncrypt, GSS_C_QOP_DEFAULT, &inputMessageBuffer, &confState, &gssBuffer);
+    return NetSecurityNative_HandleError(majorStatus, &gssBuffer, outBuffer);
+}
+
+extern "C" uint32_t NetSecurityNative_Unwrap(uint32_t* minorStatus,
+                                             GssCtxId* contextHandle,
+                                             uint8_t* inputBytes,
+                                             int32_t offset,
+                                             int32_t count,
+                                             struct PAL_GssBuffer* outBuffer)
+{
+    assert(minorStatus != nullptr);
+    assert(contextHandle != nullptr);
+    assert(inputBytes != nullptr);
+    assert(offset >= 0);
+    assert(count >= 0);
+    assert(outBuffer != nullptr);
+
+    // count refers to the length of the input message. That is, the number of bytes of inputBytes
+    // starting at offset  that need to be wrapped.
+    GssBuffer inputMessageBuffer{.length = UnsignedCast(count), .value = inputBytes + offset};
+    GssBuffer gssBuffer {.length = 0, .value = nullptr};
+    uint32_t majorStatus =
+        gss_unwrap(minorStatus, contextHandle, &inputMessageBuffer, &gssBuffer, nullptr, nullptr);
+    return NetSecurityNative_HandleError(majorStatus, &gssBuffer, outBuffer);
 }

@@ -47,7 +47,7 @@ internal static partial class Interop
 
                 try
                 {
-                    status = Interop.NetSecurityNative.CreateType3Message(password, _type2Handle, username, domain, flags,
+                    int status = Interop.NetSecurityNative.CreateType3Message(password, _type2Handle, username, domain, flags,
                         ref sessionKeyBuffer, ref outputData);
                     Interop.NetSecurityNative.HeimdalNtlmException.ThrowIfError(status);
 
