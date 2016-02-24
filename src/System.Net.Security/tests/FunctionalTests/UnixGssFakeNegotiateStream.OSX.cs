@@ -58,7 +58,7 @@ namespace System.Net.Security.Tests
             return status == Interop.NetSecurityNative.Status.GSS_S_COMPLETE;
         }
 
-        private static byte[] UnwrapMessage(SafeGssContextHandle context, byte[] message)
+        private static byte[] UnwrapMessage(SafeGssContextHandle context, bool isNtlm, byte[] message)
         {
             Interop.NetSecurityNative.GssBuffer unwrapped = default(Interop.NetSecurityNative.GssBuffer);
             Interop.NetSecurityNative.Status status;
@@ -85,7 +85,7 @@ namespace System.Net.Security.Tests
             }
         }
 
-        private static byte[] WrapMessage(SafeGssContextHandle context, byte[] message)
+        private static byte[] WrapMessage(SafeGssContextHandle context, bool isNtlm, byte[] message)
         {
             Interop.NetSecurityNative.GssBuffer wrapped = default(Interop.NetSecurityNative.GssBuffer);
             Interop.NetSecurityNative.Status status;

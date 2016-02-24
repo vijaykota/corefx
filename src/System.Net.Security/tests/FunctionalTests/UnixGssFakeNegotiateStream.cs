@@ -20,6 +20,7 @@ namespace System.Net.Security.Tests
         {
             _framer = new UnixGssFakeStreamFramer(innerStream);
             _dataMsgCount = 0;
+            KDCSetup.CheckAndInitializeNtlm(true); // TODO: Needed via fixture
         }
 
         public override Task AuthenticateAsServerAsync()
@@ -72,8 +73,8 @@ namespace System.Net.Security.Tests
             while (thisRef._dataMsgCount > 0)
             {
                 byte[] inBuf = thisRef._framer.ReadDataFrame();
-                byte[] unwrapped = UnwrapMessage(thisRef._context, inBuf);
-                byte[] outMsg = WrapMessage(thisRef._context, unwrapped);
+                byte[] unwrapped = UnwrapMessage(thisRef._context, thisRef._isNtlm, inBuf);
+                byte[] outMsg = WrapMessage(thisRef._context, thisRef._isNtlm, unwrapped);
                 thisRef._framer.WriteDataFrame(outMsg, 0, outMsg.Length);
                 thisRef._dataMsgCount--;
             }

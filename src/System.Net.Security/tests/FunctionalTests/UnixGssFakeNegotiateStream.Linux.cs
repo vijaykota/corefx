@@ -17,7 +17,33 @@ namespace System.Net.Security.Tests
 
         public static bool CheckAndInitializeNtlm(bool isKrbAvailable)
         {
+
+            // TODO: Create temporary files
+            // TODO: Define constants
+            var password = "/tmp/mypassword";
+            var cache = "/tmp/mycache";
+            var cacheSwitch = " -c FILE:" + cache;
+            Environment.SetEnvironmentVariable("NTLM_ACCEPTOR_CCACHE", cache);
+            RunProcess("kdestroy", cacheSwitch);
+            File.Delete(cache);
+            RunProcess("kinit", cacheSwitch + " --password-file=" + password + " digestserver@TEST.H5L.SE"); // TODO: replace with correct values
+            RunProcess("klist", cacheSwitch); // TODO: Only for debugging
             return isKrbAvailable && File.Exists(NtlmShim);
+            // TODO: Clean up required for the temp files
+        }
+
+        // TODO: See if existing code can be reused
+        private static bool RunProcess(string cmd, string args)
+        {
+            var processInfo = new System.Diagnostics.ProcessStartInfo(cmd);
+            processInfo.FileName = cmd;
+            processInfo.CreateNoWindow = true;
+            processInfo.Arguments = args;
+            using (var proc = System.Diagnostics.Process.Start(processInfo))
+            {
+                proc.WaitForExit();
+                return proc.ExitCode == 0;
+            }
         }
     }
 
@@ -162,10 +188,11 @@ namespace System.Net.Security.Tests
             return status == Interop.NetSecurityNative.Status.GSS_S_COMPLETE;
         }
 
-        private static byte[] UnwrapMessage(SafeGssContextHandle context, byte[] message)
+        private static byte[] UnwrapMessage(SafeGssContextHandle context, bool isNtlm, byte[] message)
         {
             Interop.NetSecurityNative.Status status;
             Interop.NetSecurityNative.Status minorStatus;
+            byte[] outputBuffer;
 
             if (isNtlm)
             {
@@ -178,7 +205,12 @@ namespace System.Net.Security.Tests
                                         0,
                                         message.Length,
                                         ref unwrapped);
-                    return unwrapped.ToByteArray();
+                    outputBuffer = unwrapped.ToByteArray();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Got ex in accept: {0}", ex); // TODO: FOr debugging
+                    throw;
                 }
                 finally
                 {
@@ -196,7 +228,7 @@ namespace System.Net.Security.Tests
                                                           0,
                                                           message.Length,
                                                           ref unwrapped);
-                    return unwrapped.ToByteArray();
+                    outputBuffer = unwrapped.ToByteArray();
                 }
                 finally
                 {
@@ -207,13 +239,14 @@ namespace System.Net.Security.Tests
             {
                 throw new Interop.NetSecurityNative.GssApiException(status, minorStatus);
             }
+            return outputBuffer;
         }
 
-        private static byte[] WrapMessage(SafeGssContextHandle context, byte[] message)
+        private static byte[] WrapMessage(SafeGssContextHandle context, bool isNtlm, byte[] message)
         {
-            Interop.NetSecurityNative.GssBuffer wrapped = default(Interop.NetSecurityNative.GssBuffer);
             Interop.NetSecurityNative.Status status;
             Interop.NetSecurityNative.Status minorStatus;
+            byte[] outputBuffer;
 
             if (isNtlm)
             {
@@ -227,7 +260,7 @@ namespace System.Net.Security.Tests
                                       0,
                                       message.Length,
                                       ref wrapped);
-                    return wrapped.ToByteArray();
+                    outputBuffer = wrapped.ToByteArray();
                 }
                 finally
                 {
@@ -246,7 +279,7 @@ namespace System.Net.Security.Tests
                                                             0,
                                                             message.Length,
                                                             ref wrapped);
-                    return wrapped.ToByteArray();
+                    outputBuffer = wrapped.ToByteArray();
                 }
                 finally
                 {
@@ -257,6 +290,7 @@ namespace System.Net.Security.Tests
             {
                 throw new Interop.NetSecurityNative.GssApiException(status, minorStatus);
             }
+            return outputBuffer;
         }
     }
 }
