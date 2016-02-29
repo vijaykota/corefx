@@ -4,27 +4,37 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 add_definitions(-DPIC=1)
 
-if (HAVE_GSSFW_HEADERS)
-   find_library(LIBGSS NAMES GSS)
-else()
-   find_library(LIBGSS NAMES gssapi_krb5)
-endif()
+if (1)
+   add_compile_options(-Wno-padded)
+   add_compile_options(-Wno-old-style-cast)
+   find_library(LIB_HEIMDAL NAMES gssapi PATHS /usr/heimdal/lib)
+   find_library(LIB_HEIMNTLM NAMES heimntlm PATHS /usr/heimdal/lib)
+   include_directories(/usr/heimdal/include)
 
-if(LIBGSS STREQUAL LIBGSS-NOTFOUND)
-    message(FATAL_ERROR "Cannot find libgssapi_krb5 and System.Net.Security.Native cannot build without it. Try installing libkrb5-dev (or the appropriate package for your platform)")
-endif()
+   if(LIB_HEIMNTLM STREQUAL LIB_HEIMNTLM-NOTFOUND)
+       message(FATAL_ERROR "Cannot find libheimntlm.so and System.Net.Security.Native cannot build without it. Try installing libheimntlm (or the appropriate package for your platform)")
+   endif()
 
-set(NATIVEGSS_SOURCES
-    pal_gssapi.cpp
-)
 
-add_library(System.Net.Security.Native
+   set(NATIVENTLM_SOURCES
+     pal_ntlmapi.cpp
+   )
+
+   add_library(System.Net.Security.Native
     SHARED
-    ${NATIVEGSS_SOURCES}
-)
+    ${NATIVENTLM_SOURCES}
+   )
 
-target_link_libraries(System.Net.Security.Native
-    ${LIBGSS}
-)
+   target_link_libraries(System.Net.Security.Native
+           ${LIB_HEIMNTLM}
+           ${OPENSSL_CRYPTO_LIBRARY}
+           ${LIB_HEIMDAL}
+   )
 
-install (TARGETS System.Net.Security.Native DESTINATION .)
+   install (TARGETS System.Net.Security.Native DESTINATION .)
+
+elseif (CMAKE_SYSTEM_NAME STREQUAL Linux)
+   message (FATAL_ERROR "cannot find libheim ntlm headers and System.Net.Security.Native cannot build without it. Try installing libheimntlm (or the appropriate package for your platform)")
+else ()
+   message(STATUS "Heimdal shims not needed for this platform")
+endif()

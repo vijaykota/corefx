@@ -76,6 +76,7 @@ namespace System.Net.Security.Tests
 
             byte[] lenBytes = new byte[4];
             _innerStream.Read(lenBytes, 0, lenBytes.Length);
+            Console.WriteLine("*** SERVER READ: {0}", lenBytes.Length);
             if (!BitConverter.IsLittleEndian)
             {
                 Array.Reverse(lenBytes);
@@ -84,6 +85,7 @@ namespace System.Net.Security.Tests
             int length = Convert.ToInt32(BitConverter.ToUInt32(lenBytes, startIndex: 0));
             byte[] data = new byte[length];
             _innerStream.Read(data, 0, length);
+            Console.WriteLine("*** SERVER READ: {0}", data.Length);
             return data;
         }
 

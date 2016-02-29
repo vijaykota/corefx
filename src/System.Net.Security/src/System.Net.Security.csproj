@@ -369,6 +369,10 @@
     <Compile Include="$(CommonPath)\Interop\Unix\System.Net.Security.Native\Interop.NetSecurityNative.cs"> 
       <Link>Common\Interop\Unix\System.Net.Security.Native\Interop.NetSecurityNative.cs</Link> 
     </Compile>
+    <Compile Include="$(CommonPath)\System\SR.cs"/>
+    <Compile Include="e:\src\git\forks\corefx\tools\AssemblyInfoPartial.cs"/>
+    <Compile Include="SR.cs"/>
+    <Compile Include="_AssemblyInfo.cs"/>
   </ItemGroup>
   
   <ItemGroup>

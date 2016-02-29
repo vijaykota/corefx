@@ -196,6 +196,7 @@ namespace System.Net.Security.Tests
 
             if (isNtlm)
             {
+                Console.WriteLine("Got ex in accept: {0}", message.Length); // TODO: FOr debugging
                 NtlmBuffer unwrapped = default(NtlmBuffer);
                 try
                 {
